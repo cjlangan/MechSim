@@ -10,7 +10,7 @@
 #include <dirent.h>
 #include <getopt.h>
 #include <signal.h>
-#include <sys/stat.h> // for stat()
+#include <sys/stat.h>
 
 #define MAX_PATH_LENGTH 512
 #define AUDIO_BASE_DIR MECHSIM_DATA_DIR "/audio"
@@ -23,7 +23,8 @@ void print_usage(const char *program_name) {
     printf("MechSim - Mechanical Keyboard Sound Simulator\n\n");
     printf("Usage: %s [OPTIONS]\n\n", program_name);
     printf("Options:\n");
-    printf("  -s, --sound SOUND_NAME    Select sound pack (default: eg-oreo)\n");
+    printf("  -s, --sound SOUND_NAME   Select sound pack (default: eg-oreo)\n");
+    printf("  -V, --volume VOLUME      Set volume [0-100] (default: 20)\n");
     printf("  -l, --list               List available sound packs\n");
     printf("  -h, --help               Show this help message\n");
     printf("  -v, --verbose            Enable verbose output\n");
@@ -118,17 +119,25 @@ int main(int argc, char *argv[]) {
     // Parse command line arguments
     static struct option long_options[] = {
         {"sound",   required_argument, 0, 's'},
+        {"volume",  required_argument, 0, 'V'},
         {"list",    no_argument,       0, 'l'},
         {"help",    no_argument,       0, 'h'},
         {"verbose", no_argument,       0, 'v'},
         {0, 0, 0, 0}
     };
+
+    int volume = 20;
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "s:lhv", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "s:V:lhv", long_options, NULL)) != -1) {
         switch (opt) {
             case 's':
                 sound_name = optarg;
+                break;
+            case 'V':
+                volume = atoi(optarg);
+                if (volume < 0) volume = 0;
+                if (volume > 100) volume = 100;
                 break;
             case 'l':
                 list_sounds = 1;
@@ -204,8 +213,8 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Starting keyboard listener...\n");
         }
         
-        execl("/usr/bin/sudo", "sudo", MECHSIM_BIN_DIR "/showmethekey-cli", (char *)NULL);
-        perror("execl showmethekey-cli");
+        execl("/usr/bin/sudo", "sudo", MECHSIM_BIN_DIR "/get_key_presses", (char *)NULL);
+        perror("execl get_key_presses");
         exit(1);
     }
     
@@ -236,7 +245,9 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Starting sound player...\n");
         }
         
-        execl(MECHSIM_BIN_DIR "/keyboard_sound_player", "keyboard_sound_player", "config.json", (char *)NULL);
+        char volume_str[32];
+        snprintf(volume_str, sizeof(volume_str), "%d", volume);
+        execl(MECHSIM_BIN_DIR "/keyboard_sound_player", "keyboard_sound_player", "config.json", volume_str, (char *)NULL);
         perror("execl keyboard_sound_player");
         exit(1);
     }

@@ -30,6 +30,7 @@ typedef struct {
 
 // Global sound pack
 SoundPack g_sound_pack = {0};
+float g_volume = 1.0f;
 
 // Thread pool for sound playback
 pthread_t sound_threads[MAX_CONCURRENT_SOUNDS];
@@ -184,6 +185,10 @@ void* play_sound_thread(void* arg) {
         sf_count_t frames_read = sf_readf_short(sf, buffer, duration_frames);
         
         if (frames_read > 0) {
+            for(sf_count_t i = 0; i < frames_read * channels; i++) {
+                buffer[i] = (short)(buffer[i] * g_volume);
+            }
+
             int bytes_to_write = frames_read * channels * sizeof(short);
             pa_simple_write(pa_handle, buffer, bytes_to_write, NULL);
             pa_simple_drain(pa_handle, NULL);
@@ -285,9 +290,18 @@ void cleanup() {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <config.json>\n", argv[0]);
+    if (argc < 2 || argc > 3) {
+        fprintf(stderr, "Usage: %s <config.json> [volume]\n", argv[0]);
+        fprintf(stderr, "  volume: 0.0-5.0 (default: 1.0)\n");
         return 1;
+    }
+
+    // Set volume
+    if (argc == 3) {
+        g_volume = atoi(argv[2]) / 20.0;
+        if (g_volume < 0.0f) g_volume = 0.0f;
+        if (g_volume > 5.0f) g_volume = 5.0f;
+        printf("Volume set to: %.0f%%\n", g_volume);
     }
 
     // Load sound configuration
