@@ -14,8 +14,10 @@ MECHSIM_SOURCE = mechsim.c
 SOUND_SOURCE = keyboard_sound_player.c
 KEYBOARD_SOURCE = get_key_presses.c
 
-# Package dependencies (Ubuntu/Debian)
-PACKAGES = libjson-c-dev libpulse-dev libsndfile1-dev libinput-dev libevdev-dev libudev-dev
+# Install paths
+PREFIX ?= /usr
+BINDIR = $(PREFIX)/bin
+SHAREDIR = $(PREFIX)/share/mechsim
 
 all: $(MECHSIM_TARGET) $(SOUND_TARGET) $(KEYBOARD_TARGET)
 
@@ -41,13 +43,20 @@ test: all
 	@echo "  sudo ./$(MECHSIM_TARGET) --help             # Show help"
 
 install:
-	@echo "Installing MechSim to /usr/local/bin..."
-	sudo cp $(MECHSIM_TARGET) /usr/local/bin/
-	sudo cp $(SOUND_TARGET) /usr/local/bin/
-	sudo cp $(KEYBOARD_TARGET) /usr/local/bin/
-	sudo mkdir -p /usr/local/share/mechsim
-	sudo cp -r audio /usr/local/share/mechsim/
-	@echo "Installation complete!"
-	@echo "You can now run: mechsim"
+	@echo "Installing MechSim to $(DESTDIR)$(BINDIR) and $(DESTDIR)$(SHAREDIR)..."
+	install -Dm755 $(MECHSIM_TARGET) $(DESTDIR)$(BINDIR)/$(MECHSIM_TARGET)
+	install -Dm755 $(SOUND_TARGET) $(DESTDIR)$(BINDIR)/$(SOUND_TARGET)
+	install -Dm755 $(KEYBOARD_TARGET) $(DESTDIR)$(BINDIR)/$(KEYBOARD_TARGET)
+	install -d $(DESTDIR)$(SHAREDIR)
+	cp -r audio/* $(DESTDIR)$(SHAREDIR)/
+	@echo "Installation complete."
 
-.PHONY: all clean test install
+uninstall:
+	@echo "Uninstalling MechSim from $(DESTDIR)$(BINDIR) and $(DESTDIR)$(SHAREDIR)..."
+	rm -f $(DESTDIR)$(BINDIR)/$(MECHSIM_TARGET)
+	rm -f $(DESTDIR)$(BINDIR)/$(SOUND_TARGET)
+	rm -f $(DESTDIR)$(BINDIR)/$(KEYBOARD_TARGET)
+	rm -rf $(DESTDIR)$(SHAREDIR)
+	@echo "Uninstallation complete."
+
+.PHONY: all clean test install uninstall

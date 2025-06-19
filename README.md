@@ -69,7 +69,7 @@ mechsim # default uses sound eg-oreo at volume 20
 git clone https://github.com/cjlangan/mechsim
 cd mechsim
 make
-make install
+sudo make install
 ```
 
 ## Motivation 
