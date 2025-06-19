@@ -1,6 +1,10 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c99
-CPPFLAGS = $(shell pkg-config --cflags libevdev)
+PREFIX ?= /usr
+
+# Pass PACKAGE_PREFIX macro for config.h
+CPPFLAGS = -DPACKAGE_PREFIX=\"$(PREFIX)\" $(shell pkg-config --cflags libevdev)
+
 LDFLAGS_SOUND = -ljson-c -lpulse -lpulse-simple -lsndfile -lpthread
 LDFLAGS_KEYBOARD = $(shell pkg-config --libs libevdev libinput libudev) -lpthread
 
@@ -15,7 +19,6 @@ SOUND_SOURCE = keyboard_sound_player.c
 KEYBOARD_SOURCE = get_key_presses.c
 
 # Install paths
-PREFIX ?= /usr
 BINDIR = $(PREFIX)/bin
 SHAREDIR = $(PREFIX)/share/mechsim
 
@@ -48,7 +51,7 @@ install:
 	install -Dm755 $(SOUND_TARGET) $(DESTDIR)$(BINDIR)/$(SOUND_TARGET)
 	install -Dm755 $(KEYBOARD_TARGET) $(DESTDIR)$(BINDIR)/$(KEYBOARD_TARGET)
 	install -d $(DESTDIR)$(SHAREDIR)
-	cp -r audio/* $(DESTDIR)$(SHAREDIR)/
+	cp -r audio $(DESTDIR)$(SHAREDIR)/
 	@echo "Installation complete."
 
 uninstall:
