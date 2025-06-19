@@ -40,7 +40,7 @@ test: all
 	@echo "  sudo ./$(MECHSIM_TARGET) -s cherrymx-blue-abs  # Specific sound"
 	@echo "  sudo ./$(MECHSIM_TARGET) --help             # Show help"
 
-install: all
+install:
 	@echo "Installing MechSim to /usr/local/bin..."
 	sudo cp $(MECHSIM_TARGET) /usr/local/bin/
 	sudo cp $(SOUND_TARGET) /usr/local/bin/
