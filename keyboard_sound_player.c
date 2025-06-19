@@ -151,7 +151,7 @@ int load_sound_config(const char *config_path) {
                     // Check if file exists before adding to count
                     if (access(g_sound_pack.generic_press_files[i], R_OK) == 0) {
                         g_sound_pack.num_generic_press_files = i + 1;  // Keep track of highest valid index + 1
-                        printf("Found generic sound file: %s\n", g_sound_pack.generic_press_files[i]);
+                        // printf("Found generic sound file: %s\n", g_sound_pack.generic_press_files[i]);
                     } else {
                         printf("Generic sound file not found: %s\n", g_sound_pack.generic_press_files[i]);
                         break;  // Stop at first missing file
@@ -178,7 +178,7 @@ int load_sound_config(const char *config_path) {
         }
 
         if (json_object_object_get_ex(root, "defines", &obj)) {
-            printf("Processing key definitions...\n");
+            // printf("Processing key definitions...\n");
             json_object_object_foreach(obj, key, val) {
                 int key_code;
                 int is_release = 0;
@@ -197,7 +197,7 @@ int load_sound_config(const char *config_path) {
                     const char *filename_relative = json_object_get_string(val);
                     char full_filename[MAX_LINE_LENGTH];
                     get_full_path(full_filename, sizeof(full_filename), config_dir, filename_relative);
-                    printf("Key %d (%s): %s (full path: %s)\n", key_code, is_release ? "release" : "press", filename_relative, full_filename);
+                    // printf("Key %d (%s): %s (full path: %s)\n", key_code, is_release ? "release" : "press", filename_relative, full_filename);
                     
                     if (is_release) {
                         if (g_sound_pack.multi_key_mappings[key_code].release) {
@@ -242,7 +242,7 @@ int load_sound_config(const char *config_path) {
 int init_audio() {
     // For multi mode, we don't need to check a single sound file
     if (g_sound_pack.is_multi) {
-        printf("Multi mode: Audio will be initialized per sound file\n");
+        // printf("Multi mode: Audio will be initialized per sound file\n");
         return 0;
     }
     
@@ -587,10 +587,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Keyboard sound player initialized. Listening for key events...\n");
-    printf("Max concurrent sounds: %d\n", MAX_CONCURRENT_SOUNDS);
-    printf("Waiting for input on stdin...\n");
-    fflush(stdout);
+    // printf("Keyboard sound player initialized. Listening for key events...\n");
+    // printf("Max concurrent sounds: %d\n", MAX_CONCURRENT_SOUNDS);
+    // printf("Waiting for input on stdin...\n");
+    // fflush(stdout);
 
     // Add timeout for debugging
     fd_set readfds;
