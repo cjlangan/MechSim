@@ -15,8 +15,6 @@
 
 https://github.com/user-attachments/assets/622ff7b3-11c9-4f51-be4d-5f19565adbf5
 
-*The video shows just a few of the many options*
-
 <div align="center">
 <p align="center">The video shows just a few of the many options</p>
 </div>
