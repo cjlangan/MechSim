@@ -4,6 +4,8 @@
 
 https://github.com/user-attachments/assets/622ff7b3-11c9-4f51-be4d-5f19565adbf5
 
+*The video shows just a few of the many options*
+
 ## Usage
 
 ```bash
@@ -25,6 +27,28 @@ mechsim # default uses sound eg-oreo at volume 20
       mechsim                       # Use default sound (eg-oreo)
       mechsim -s cherrymx-blue-abs  # Use Cherry MX Blue ABS sound
       mechsim -l                    # List all available sounds
+
+
+## Available Sounds:
+
+- nk-cream
+- cherrymx-black-abs
+- cherrymx-red-pbt
+- cherrymx-blue-abs
+- eg-oreo
+- cherrymx-brown-pbt
+- eg-crystal-purple
+- cherrymx-brown-abs
+- topre-purple-hybrid-pbt
+- cream-travel
+- holy-pandas
+- mxbrown-travel
+- cherrymx-red-abs
+- mxblack-travel
+- cherrymx-black-pbt
+- turquoise
+- cherrymx-blue-pbt
+- mxblue-travel
 
 
 ## Dependencies
