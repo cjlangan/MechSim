@@ -50,6 +50,7 @@ static void *handle_input(void *user_data)
 
 static int open_restricted(const char *path, int flags, void *user_data)
 {
+    (void)user_data;
 	int fd = open(path, flags);
 	if (fd < 0)
 		fprintf(stderr, "Failed to open %s because of %s.\n", path,
@@ -59,6 +60,7 @@ static int open_restricted(const char *path, int flags, void *user_data)
 
 static void close_restricted(int fd, void *user_data)
 {
+    (void)user_data;
 	close(fd);
 }
 

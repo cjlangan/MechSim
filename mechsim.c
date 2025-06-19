@@ -35,7 +35,6 @@ void print_usage(const char *program_name) {
     printf("\nPress Ctrl+C to exit.\n");
 }
 
-
 int list_sound_packs() {
     DIR *dir;
     struct dirent *entry;
@@ -111,6 +110,30 @@ void cleanup_processes(int sig) {
     exit(0);
 }
 
+// Function to check if sudo credentials are cached
+int check_sudo_cached() {
+    int status = system("sudo -n true 2>/dev/null");
+    return WEXITSTATUS(status) == 0;
+}
+
+// Function to prompt for sudo password if needed
+int ensure_sudo_access() {
+    if (check_sudo_cached()) {
+        return 1; // Already have sudo access
+    }
+    
+    printf("This program requires sudo access to monitor keyboard events.\n");
+    printf("Please enter your password when prompted:\n");
+    
+    int status = system("sudo -v");
+    if (WEXITSTATUS(status) != 0) {
+        fprintf(stderr, "Error: Failed to obtain sudo access\n");
+        return 0;
+    }
+    
+    return 1;
+}
+
 int main(int argc, char *argv[]) {
     char *sound_name = "eg-oreo"; // Default sound pack
     int verbose = 0;
@@ -164,6 +187,28 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
+    // Ensure sudo access BEFORE forking
+    if (!ensure_sudo_access()) {
+        return 1;
+    }
+    
+    // Check if required executables exist
+    char get_key_presses_path[MAX_PATH_LENGTH];
+    char sound_player_path[MAX_PATH_LENGTH];
+    
+    snprintf(get_key_presses_path, sizeof(get_key_presses_path), "%s/get_key_presses", MECHSIM_BIN_DIR);
+    snprintf(sound_player_path, sizeof(sound_player_path), "%s/keyboard_sound_player", MECHSIM_BIN_DIR);
+    
+    if (access(get_key_presses_path, X_OK) != 0) {
+        fprintf(stderr, "Error: Cannot find or execute %s\n", get_key_presses_path);
+        return 1;
+    }
+    
+    if (access(sound_player_path, X_OK) != 0) {
+        fprintf(stderr, "Error: Cannot find or execute %s\n", sound_player_path);
+        return 1;
+    }
+    
     // Setup signal handler for cleanup
     signal(SIGINT, cleanup_processes);
     signal(SIGTERM, cleanup_processes);
@@ -192,40 +237,14 @@ int main(int argc, char *argv[]) {
         perror("pipe");
         return 1;
     }
-    
-    // Fork keyboard listener process
-    keyboard_pid = fork();
-    if (keyboard_pid == -1) {
-        perror("fork");
-        return 1;
-    }
-    
-    if (keyboard_pid == 0) {
-        // Child process: keyboard listener
-        close(pipefd[0]); // Close read end
-        
-        // Redirect stdout to pipe
-        dup2(pipefd[1], STDOUT_FILENO);
-        close(pipefd[1]);
-        
-        // Execute keyboard listener
-        if (verbose) {
-            fprintf(stderr, "Starting keyboard listener...\n");
-        }
-        
-        execl("/usr/bin/sudo", "sudo", MECHSIM_BIN_DIR "/get_key_presses", (char *)NULL);
-        perror("execl get_key_presses");
-        exit(1);
-    }
-    
-    // Fork sound player process
+
+    // Fork sound player process FIRST
     sound_pid = fork();
     if (sound_pid == -1) {
         perror("fork");
-        kill(keyboard_pid, SIGTERM);
         return 1;
     }
-    
+
     if (sound_pid == 0) {
         // Child process: sound player
         close(pipefd[1]); // Close write end
@@ -239,16 +258,41 @@ int main(int argc, char *argv[]) {
             perror("chdir");
             exit(1);
         }
-        
-        // Execute sound player
+
         if (verbose) {
             fprintf(stderr, "Starting sound player...\n");
         }
-        
+
         char volume_str[32];
         snprintf(volume_str, sizeof(volume_str), "%d", volume);
-        execl(MECHSIM_BIN_DIR "/keyboard_sound_player", "keyboard_sound_player", "config.json", volume_str, (char *)NULL);
+        execl(sound_player_path, "keyboard_sound_player", "config.json", volume_str, (char *)NULL);
         perror("execl keyboard_sound_player");
+        exit(1);
+    }
+
+    // Then fork keyboard listener process (sudo)
+    keyboard_pid = fork();
+    if (keyboard_pid == -1) {
+        perror("fork");
+        kill(sound_pid, SIGTERM);
+        return 1;
+    }
+
+    if (keyboard_pid == 0) {
+        // Child process: keyboard listener
+        close(pipefd[0]); // Close read end
+
+        // Redirect stdout to pipe
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+
+        if (verbose) {
+            fprintf(stderr, "Starting keyboard listener...\n");
+        }
+
+        // Use -n flag to prevent sudo from prompting again (credentials should be cached)
+        execl("/usr/bin/sudo", "sudo", "-n", get_key_presses_path, (char *)NULL);
+        perror("execl get_key_presses");
         exit(1);
     }
     
@@ -262,16 +306,18 @@ int main(int argc, char *argv[]) {
     // Wait for either child to exit
     while ((finished_pid = wait(&status)) > 0) {
         if (finished_pid == keyboard_pid) {
-            if (verbose) {
-                printf("Keyboard listener exited\n");
+            printf("Keyboard listener exited with status %d\n", WEXITSTATUS(status));
+            if (WIFSIGNALED(status)) {
+                printf("Keyboard listener killed by signal %d\n", WTERMSIG(status));
             }
             keyboard_pid = 0;
             if (sound_pid > 0) {
                 kill(sound_pid, SIGTERM);
             }
         } else if (finished_pid == sound_pid) {
-            if (verbose) {
-                printf("Sound player exited\n");
+            printf("Sound player exited with status %d\n", WEXITSTATUS(status));
+            if (WIFSIGNALED(status)) {
+                printf("Sound player killed by signal %d\n", WTERMSIG(status));
             }
             sound_pid = 0;
             if (keyboard_pid > 0) {
