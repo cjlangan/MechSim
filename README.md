@@ -1,15 +1,51 @@
-# MechSim - Mechanical Keyboard Sound Simulator
+<h1 align="center">mechsim</h1>
 
-### Wayland Compatible!
+<div align="center">
+<p>
+<a href="https://github.com/cjlangan/mechsim/stargazers"><img src="https://img.shields.io/github/stars/cjlangan/mechsim?style=for-the-badge&logo=starship&color=C9CBFF&logoColor=C9CBFF&labelColor=302D41" alt="stars"><a>&nbsp;&nbsp;
+<a href="https://github.com/cjlangan/mechsim/"><img src="https://img.shields.io/github/repo-size/cjlangan/mechsim?style=for-the-badge&logo=hyprland&logoColor=f9e2af&label=Size&labelColor=302D41&color=f9e2af" alt="REPO SIZE"></a>&nbsp;&nbsp;
+<a href="https://github.com/cjlangan/mechsim/releases"><img src="https://img.shields.io/github/v/release/cjlangan/mechsim?style=for-the-badge&logo=github&logoColor=eba0ac&label=Release&labelColor=302D41&color=eba0ac" alt="Releases"></a>&nbsp;&nbsp;
+<a href="https://github.com/cjlangan/mechsim/blob/main/LICENSE"><img src="https://img.shields.io/github/license/cjlangan/mechsim?style=for-the-badge&logo=&color=CBA6F7&logoColor=CBA6F7&labelColor=302D41" alt="LICENSE"></a>&nbsp;&nbsp;
+</p>
+</div>
+
+<p align="center">A CLI-Based Mechanical Keyboard Sound Simulator</p>
+
+<br>
 
 https://github.com/user-attachments/assets/622ff7b3-11c9-4f51-be4d-5f19565adbf5
 
 *The video shows just a few of the many options*
 
+<div align="center">
+<p align="center">The video shows just a few of the many options</p>
+</div>
+
 ## Usage
 
 ```bash
-mechsim # default uses sound eg-oreo at volume 20
+mechsim         # default uses sound eg-oreo at volume 20
+
+mechsim -l      # list out all sound packs
+
+mechsim -s turquoise -V 60  # choose soundpack turquoise at 60% volume
+```
+
+## Installation
+
+### Arch Linux (AUR)
+
+```bash
+yay -S mechsim
+```
+
+### Build From Source
+
+```bash
+git clone https://github.com/cjlangan/mechsim
+cd mechsim
+make
+sudo make install
 ```
 
 ## Full Usage
@@ -62,15 +98,6 @@ mechsim # default uses sound eg-oreo at volume 20
 - libevdev-dev
 - libudev-d
 
-
-## Build & Install
-
-```bash
-git clone https://github.com/cjlangan/mechsim
-cd mechsim
-make
-sudo make install
-```
 
 ## Motivation 
 
