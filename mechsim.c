@@ -24,7 +24,7 @@ void print_usage(const char *program_name) {
     printf("Usage: %s [OPTIONS]\n\n", program_name);
     printf("Options:\n");
     printf("  -s, --sound SOUND_NAME   Select sound pack (default: eg-oreo)\n");
-    printf("  -V, --volume VOLUME      Set volume [0-100] (default: 20)\n");
+    printf("  -V, --volume VOLUME      Set volume [0-100] (default: 50)\n");
     printf("  -l, --list               List available sound packs\n");
     printf("  -h, --help               Show this help message\n");
     printf("  -v, --verbose            Enable verbose output\n");
@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
         {0, 0, 0, 0}
     };
 
-    int volume = 20;
+    int volume = 50;
     
     int opt;
     while ((opt = getopt_long(argc, argv, "s:V:lhv", long_options, NULL)) != -1) {

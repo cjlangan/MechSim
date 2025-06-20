@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/622ff7b3-11c9-4f51-be4d-5f19565adbf5
 ## Usage
 
 ```bash
-mechsim         # default uses sound eg-oreo at volume 20
+mechsim         # default uses sound eg-oreo at volume 50
 
 mechsim -l      # list out all sound packs
 
@@ -52,7 +52,7 @@ sudo make install
 
     Options:
       -s, --sound SOUND_NAME   Select sound pack (default: eg-oreo)
-      -V, --volume VOLUME      Set volume [0-100] (default: 20)
+      -V, --volume VOLUME      Set volume [0-100] (default: 50)
       -l, --list               List available sound packs
       -h, --help               Show this help message
       -v, --verbose            Enable verbose output

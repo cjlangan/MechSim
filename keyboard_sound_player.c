@@ -551,7 +551,7 @@ void cleanup() {
 int main(int argc, char *argv[]) {
     if (argc < 2 || argc > 4) {
         fprintf(stderr, "Usage: %s <config.json> [volume] [verbose]\n", argv[0]);
-        fprintf(stderr, "  volume: 0-100 (default: 20)\n");
+        fprintf(stderr, "  volume: 0-100 (default: 50)\n");
         fprintf(stderr, "  verbose: 1 to enable verbose output (default: 0)\n");
         return 1;
     }
@@ -564,7 +564,7 @@ int main(int argc, char *argv[]) {
         g_volume = volume_percent / 100.0f;
         printf("Volume set to: %d%%\n", volume_percent);
     } else {
-        printf("Volume set to: 20%% (default)\n");
+        printf("Volume set to: 50%% (default)\n");
     }
     
     // Set verbose mode
