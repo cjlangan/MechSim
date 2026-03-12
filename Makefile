@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -std=c99
 PREFIX ?= /usr
 
 # Pass PACKAGE_PREFIX macro for config.h
-CPPFLAGS = -DPACKAGE_PREFIX=\"$(PREFIX)\" $(shell pkg-config --cflags libevdev)
+CPPFLAGS = -DPACKAGE_PREFIX=\"$(PREFIX)\" $(shell pkg-config --cflags libevdev libinput)
 
 LDFLAGS_SOUND = -ljson-c -lpulse -lpulse-simple -lsndfile -lpthread
 LDFLAGS_KEYBOARD = $(shell pkg-config --libs libevdev libinput libudev) -lpthread
