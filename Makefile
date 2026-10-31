@@ -23,11 +23,13 @@ bench: $(BIN) keyprobe
 
 install: $(BIN)
 	install -Dm755 $(BIN) $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	install -Dm755 mechsim-toggle $(DESTDIR)$(PREFIX)/bin/mechsim-toggle
 	install -d $(DESTDIR)$(PREFIX)/share/mechsim
 	cp -r audio $(DESTDIR)$(PREFIX)/share/mechsim/
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	rm -f $(DESTDIR)$(PREFIX)/bin/mechsim-toggle
 	rm -rf $(DESTDIR)$(PREFIX)/share/mechsim
 
 clean:
