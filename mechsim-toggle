@@ -1,0 +1,343 @@
+#!/bin/sh
+# mechsim-toggle - start/stop the keyboard sound player.
+#
+#   mechsim-toggle          flip it on or off
+#   mechsim-toggle on       start (no-op if already running)
+#   mechsim-toggle off      stop
+#   mechsim-toggle rest      restart (picks up pack/volume changes)
+#   mechsim-toggle status   report and exit 0 if on, 1 if off
+#
+# Sound pack and volume come from ~/.config/mechsim/config:
+#   PACK=turquoise
+#   VOLUME=55
+#   NOTIFY=1        set to 0 to suppress the desktop notification
+
+BIN="$(readlink -f "$0")"
+BIN="$(dirname "$BIN")/mechsim"
+
+RUNDIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+[ -d "$RUNDIR" ] || RUNDIR=/tmp
+PIDFILE="$RUNDIR/mechsim.pid"
+LOGFILE="$RUNDIR/mechsim.log"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/mechsim/config"
+LOCK="$RUNDIR/mechsim-toggle.lock"
+
+PACK="eg-oreo"
+VOLUME="50"
+NOTIFY=1
+if [ -r "$CONF" ]; then
+	# shellcheck disable=SC1090
+	. "$CONF"
+fi
+
+# Notifications are a nicety: stay silent when there is no bus, e.g. when this
+# runs from a TTY or from a script.
+notify() {
+	[ "$NOTIFY" = "1" ] || return 0
+	command -v notify-send >/dev/null 2>&1 || return 0
+	[ -n "$DBUS_SESSION_BUS_ADDRESS" ] || return 0
+	notify-send -a mechsim -t 1500 -i audio-volume-high "$@" >/dev/null 2>&1 || true
+}
+
+running() {
+	[ -r "$PIDFILE" ] || return 1
+	pid=$(cat "$PIDFILE" 2>/dev/null) || return 1
+	[ -n "$pid" ] || return 1
+	# Make sure the pid still belongs to us: a stale pidfile after a crash
+	# would otherwise make "off" kill an unrelated process. Redirect the read,
+	# or a pid that has exited leaks "cat: /proc/N/comm: No such file" to the
+	# terminal on every status/toggle.
+	comm=$(cat "/proc/$pid/comm" 2>/dev/null) || comm=""
+	if [ "$comm" = "mechsim" ]; then
+		return 0
+	fi
+	rm -f "$PIDFILE"
+	return 1
+}
+
+# At login this can run before pipewire-pulse is listening, and worse, before
+# the ALSA card is bound: the server answers but has only an "auto_null" sink,
+# so opening the default output fails with "No such entity". Wait for a real
+# sink, not merely for the daemon, and adopt it as the default if needed.
+wait_for_audio() {
+	command -v pactl >/dev/null 2>&1 || return 0
+	n=0
+	while [ "$n" -lt 40 ]; do
+		if pactl info >/dev/null 2>&1; then
+			real=$(pactl list short sinks 2>/dev/null |
+				awk '$2 !~ /^auto_null/ { print $2; exit }')
+			if [ -n "$real" ]; then
+				cur=$(pactl info 2>/dev/null |
+					sed -n 's/^Default Sink: //p')
+				case "$cur" in
+				auto_null*|"") pactl set-default-sink "$real" 2>/dev/null ;;
+				esac
+				return 0
+			fi
+		fi
+		n=$((n + 1))
+		sleep 0.5
+	done
+	return 1
+}
+
+start() {
+	if running; then
+		echo "already on (pid $(cat "$PIDFILE"))"
+		return 0
+	fi
+	if [ ! -x "$BIN" ]; then
+		echo "mechsim not found next to this script: $BIN" >&2
+		notify "Keyboard sounds" "player binary missing"
+		return 1
+	fi
+
+	if ! wait_for_audio; then
+		echo "audio server never came up; not starting" >&2
+		notify "Keyboard sounds" "no audio server"
+		return 1
+	fi
+
+	# Close the lock fd in the child (9>&-), or the daemon inherits it and
+	# holds the toggle lock for as long as it runs, silently blocking every
+	# later on/off/toggle invocation.
+	attempt=1
+	while :; do
+		nohup "$BIN" -s "$PACK" -V "$VOLUME" >"$LOGFILE" 2>&1 9>&- &
+		pid=$!
+		echo "$pid" >"$PIDFILE"
+		# Wait for either the "ready:" line (capture live) or the process
+		# dying with exit 3 (no readable keyboard), so success is reported
+		# immediately instead of after a blind timeout.
+		n=0
+		while [ "$n" -lt 60 ]; do
+			sleep 0.05
+			n=$((n + 1))
+			running || break
+			grep -q '^ready:' "$LOGFILE" 2>/dev/null && break
+		done
+		if running; then
+			echo "on ($PACK, ${VOLUME}%) pid $pid"
+			notify "Keyboard sounds on" "$PACK · ${VOLUME}%"
+			return 0
+		fi
+		# A sink that vanished between the readiness check and the open gives
+		# "cannot open audio output"; a retry with a fresh wait usually lands.
+		rm -f "$PIDFILE"
+		# Only retry when the audio sink was the problem. A missing 'input'
+		# group will never fix itself within a retry loop; report it now.
+		if grep -q 'readable keyboard' "$LOGFILE" 2>/dev/null; then
+			echo "failed to start; see $LOGFILE" >&2
+			cat "$LOGFILE" >&2
+			notify "Keyboard sounds" "no input access — add yourself to the input group"
+			return 1
+		fi
+		if [ "$attempt" -lt 3 ]; then
+			attempt=$((attempt + 1))
+			wait_for_audio
+			continue
+		fi
+		echo "failed to start; see $LOGFILE" >&2
+		cat "$LOGFILE" >&2
+		notify "Keyboard sounds" "failed to start — see $LOGFILE"
+		return 1
+	done
+}
+
+stop() {
+	if running; then
+		pid=$(cat "$PIDFILE")
+		kill "$pid" 2>/dev/null
+		# It should exit on SIGTERM; insist if it does not.
+		for _ in 1 2 3 4 5 6 7 8 9 10; do
+			running || break
+			sleep 0.1
+		done
+		running && kill -9 "$pid" 2>/dev/null
+		rm -f "$PIDFILE"
+		echo "off"
+		notify "Keyboard sounds off" ""
+	else
+		echo "already off"
+	fi
+	return 0
+}
+
+# Where the packs live: same search order as the player itself.
+AUDIODIR="${MECHSIM_AUDIO_DIR:-$(dirname "$BIN")/audio}"
+[ -d "$AUDIODIR" ] || AUDIODIR=/usr/local/share/mechsim/audio
+[ -d "$AUDIODIR" ] || AUDIODIR=/usr/share/mechsim/audio
+
+list_packs() {
+	if [ ! -d "$AUDIODIR" ]; then
+		echo "no sound pack directory found" >&2
+		return 1
+	fi
+	for d in $(ls -1d "$AUDIODIR"/*/ 2>/dev/null | sort); do
+		[ -f "$d/config.json" ] || continue
+		name=$(basename "$d")
+		if [ "$name" = "$PACK" ]; then
+			echo "  * $name"
+		else
+			echo "    $name"
+		fi
+	done
+}
+
+# Persist a setting in the config file, replacing the key if present.
+set_conf() {
+	key=$1
+	val=$2
+	if [ ! -f "$CONF" ]; then
+		mkdir -p "$(dirname "$CONF")"
+		{
+			echo "# mechsim-toggle settings."
+			echo "PACK=$PACK"
+			echo "VOLUME=$VOLUME"
+			echo "NOTIFY=1"
+		} > "$CONF"
+	fi
+	tmp="$CONF.tmp.$$"
+	if grep -q "^$key=" "$CONF"; then
+		sed "s|^$key=.*|$key=$val|" "$CONF" > "$tmp"
+	else
+		cp "$CONF" "$tmp"
+		printf '%s=%s\n' "$key" "$val" >> "$tmp"
+	fi
+	mv "$tmp" "$CONF"
+}
+
+require_pack() {
+	name=$1
+	if [ ! -f "$AUDIODIR/$name/config.json" ]; then
+		echo "no such sound pack: $name" >&2
+		echo "available:" >&2
+		list_packs >&2
+		return 1
+	fi
+	return 0
+}
+
+# One lock so a double-tap of the keybind cannot start two players.
+take_lock() {
+	command -v flock >/dev/null 2>&1 || return 0
+	exec 9>"$LOCK"
+	flock -n 9 || return 1
+	return 0
+}
+
+case "${1:-toggle}" in
+on)
+	take_lock || exit 0
+	start
+	;;
+off)
+	take_lock || exit 0
+	stop
+	;;
+rest)
+	take_lock || exit 0
+	running && stop >/dev/null
+	start
+	;;
+status)
+	if running; then
+		echo "on (pid $(cat "$PIDFILE"), pack $PACK, volume ${VOLUME}%)"
+		exit 0
+	fi
+	echo "off"
+	exit 1
+	;;
+toggle)
+	take_lock || exit 0
+	if running; then stop; else start; fi
+	;;
+packs | list)
+	list_packs
+	;;
+pack)
+	# pack NAME   switch sound pack and restart if running
+	if [ -z "${2:-}" ]; then
+		echo "current: $PACK"
+		echo
+		list_packs
+		echo
+		echo "usage: $(basename "$0") pack <name>"
+		exit 0
+	fi
+	take_lock || exit 0
+	require_pack "$2" || exit 1
+	set_conf PACK "$2"
+	PACK="$2"
+	echo "pack -> $PACK"
+	if running; then
+		stop >/dev/null
+		start
+	else
+		notify "Sound pack" "$PACK (will apply when turned on)"
+	fi
+	;;
+vol | volume)
+	if [ -z "${2:-}" ]; then
+		echo "volume: ${VOLUME}%"
+		exit 0
+	fi
+	take_lock || exit 0
+	case "$2" in
+	''|*[!0-9]*) echo "volume must be 0-100" >&2; exit 2 ;;
+	esac
+	if [ "$2" -lt 0 ] || [ "$2" -gt 100 ]; then
+		echo "volume must be 0-100" >&2
+		exit 2
+	fi
+	set_conf VOLUME "$2"
+	VOLUME="$2"
+	echo "volume -> ${VOLUME}%"
+	if running; then
+		stop >/dev/null
+		start
+	else
+		notify "Volume" "${VOLUME}% (will apply when turned on)"
+	fi
+	;;
+next | prev)
+	# Cycle through the available packs.
+	take_lock || exit 0
+	all=$(list_packs | sed 's/^[ *]*//')
+	[ -n "$all" ] || { echo "no packs found" >&2; exit 1; }
+	case "$1" in
+	next) new=$(echo "$all" | awk -v cur="$PACK" 'BEGIN{f=0} {a[NR]=$0} END{for(i=1;i<=NR;i++){if(f){print a[i]; exit} if(a[i]==cur) f=1} print a[1]}') ;;
+	prev) new=$(echo "$all" | awk -v cur="$PACK" 'BEGIN{p=""} {a[NR]=$0} END{for(i=1;i<=NR;i++){if(a[i]==cur){print (p==""?a[NR]:p); exit} p=a[i]} if(!found) print a[NR]}') ;;
+	esac
+	require_pack "$new" || exit 1
+	set_conf PACK "$new"
+	PACK="$new"
+	echo "pack -> $PACK"
+	if running; then
+		stop >/dev/null
+		start
+	else
+		notify "Sound pack" "$PACK (will apply when turned on)"
+	fi
+	;;
+help | -h | --help)
+	cat <<EOF
+$(basename "$0") - toggle the keyboard sound player
+
+  on | off | toggle     start / stop / flip
+  rest                  restart (re-reads the config)
+  status                "on (pid …, pack …, volume …%)" or "off"; exit 0 if on
+  packs                 list sound packs, * marks the current one
+  pack NAME             switch pack and restart
+  next | prev           cycle through packs
+  vol N                 set volume 0-100 and restart
+  vol                   print the current volume
+
+Config: $CONF  (PACK=…, VOLUME=…, NOTIFY=0 to silence notifications)
+EOF
+	;;
+*)
+	echo "usage: $(basename "$0") [on|off|rest|status|toggle|pack|next|prev|vol|packs|help]" >&2
+	exit 2
+	;;
+esac
