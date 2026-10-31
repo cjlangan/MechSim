@@ -162,7 +162,7 @@ wakes the audio thread the instant a key registers a voice.
 
 ### Measured
 
-ThinkPad T480 (i5-8250U), Void Linux, PipeWire 1.5 / `pipewire-pulse`, sink
+ThinkPad T480 (i5-8250U), Void Linux, PipeWire 1.6.9 / `pipewire-pulse`, sink
 `s32le 2ch 48000Hz`. Synthetic keystrokes via `/dev/uinput`, audio captured from
 the sink monitor, both sides timestamped on `CLOCK_MONOTONIC`, one onset paired
 per key. `make bench` reproduces it.
