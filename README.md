@@ -80,6 +80,20 @@ uses, needed that.
 It runs in the foreground until Ctrl+C. `mechsim-toggle` (below) daemonises it
 and is what you want for a keybind.
 
+## Mouse and wheel
+
+Left, right and middle clicks, the side buttons, and the scroll wheel make sound
+too. Pass `-m` / `--no-mouse` to ignore them and capture keyboards only.
+
+Packs written for MechVibes can name their mouse entries directly
+(`MouseLeft`, `MouseRight`, `MouseMiddle`, `MouseWheelUp`, `MouseWheelDown`,
+`MouseWheelLeft`, `MouseWheelRight`), and numeric evdev codes work as before.
+None of the packs bundled here define mouse sounds, so a click borrows a
+keyboard sample from the same pack: the generic random press in `multi` packs,
+or the space bar slice in `single` packs. That keeps clicks audible without a
+second sound pack to manage, and a pack that does define `MouseLeft` overrides
+it.
+
 ## Available Sounds
 
 All 18 packs, ordered from deep thock to sharp click. The numbers are measured

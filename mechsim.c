@@ -36,6 +36,13 @@
 #define PERIOD_FRAMES 960
 #endif
 #define MAX_KEYS      1024
+
+/* Wheel clicks have no evdev key code of their own; give them synthetic ones
+ * well above the real BTN_* range so a pack can map them numerically. */
+#define CODE_WHEEL_UP    1001
+#define CODE_WHEEL_DOWN  1002
+#define CODE_WHEEL_LEFT  1003
+#define CODE_WHEEL_RIGHT 1004
 #define MAX_VOICES    64
 #define MAX_DEVICES   64
 
@@ -56,6 +63,7 @@ typedef struct {
 static pthread_mutex_t mix_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t mix_cond = PTHREAD_COND_INITIALIZER;
 static int g_trace = 0;
+static int g_mouse = 1;
 
 static double mono_ms(void)
 {
@@ -228,6 +236,53 @@ static sample_t *g_release[MAX_KEYS];
 static sample_t **g_generic = NULL;
 static size_t g_generic_n = 0;
 static sample_t *g_generic_release = NULL;
+static sample_t *g_mouse_press = NULL;
+static sample_t *g_mouse_release = NULL;
+
+/* MechVibes V2 names mouse entries; MechSim packs use numeric evdev codes.
+ * Accept both, so a pack written for either tool loads. */
+static int key_name_to_code(const char *k, int *is_release)
+{
+	*is_release = 0;
+
+	if (!k || !*k)
+		return -1;
+
+	if (k[0] >= '0' && k[0] <= '9')
+		return atoi(k);
+
+	char base[64];
+	snprintf(base, sizeof(base), "%s", k);
+	char *dash = strstr(base, "-up");
+	if (dash) {
+		*dash = 0;
+		*is_release = 1;
+	} else {
+		size_t len = strlen(base);
+		if (len > 3 && strcmp(base + len - 4, "_up") == 0) {
+			base[len - 4] = 0;
+			*is_release = 1;
+		}
+	}
+
+	static const struct { const char *name; int code; } names[] = {
+		{ "MouseLeft",       BTN_LEFT },
+		{ "MouseRight",      BTN_RIGHT },
+		{ "MouseMiddle",     BTN_MIDDLE },
+		{ "MouseSide",       BTN_SIDE },
+		{ "MouseExtra",      BTN_EXTRA },
+		{ "MouseWheelUp",    CODE_WHEEL_UP },
+		{ "MouseWheelDown",  CODE_WHEEL_DOWN },
+		{ "MouseWheelLeft",  CODE_WHEEL_LEFT },
+		{ "MouseWheelRight", CODE_WHEEL_RIGHT },
+	};
+
+	for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+		if (strcmp(base, names[i].name) == 0)
+			return names[i].code;
+
+	return -1;
+}
 
 static void set_map(sample_t **map, int code, sample_t *s)
 {
@@ -353,8 +408,10 @@ static int load_pack(const char *pack_dir)
 			const char *file = mj_str(mj_at(defs, i));
 			if (!k || !file)
 				continue;
-			int code = atoi(k);
-			int is_rel = strstr(k, "-up") != NULL;
+			int is_rel = 0;
+			int code = key_name_to_code(k, &is_rel);
+			if (code < 0)
+				continue;
 			char *full = path_join(pack_dir, file);
 			sample_t *s = load_cached(full);
 			free(full);
@@ -381,7 +438,10 @@ static int load_pack(const char *pack_dir)
 			mj_val *arr = mj_at(defs, i);
 			if (!k || mj_len(arr) < 2)
 				continue;
-			int code = atoi(k);
+			int is_rel = 0;
+			int code = key_name_to_code(k, &is_rel);
+			if (code < 0)
+				continue;
 			double start_ms = mj_num(mj_at(arr, 0), 0);
 			double dur_ms = mj_num(mj_at(arr, 1), 0);
 			if (dur_ms <= 0)
@@ -403,6 +463,26 @@ static int load_pack(const char *pack_dir)
 	}
 
 	mj_free(root);
+
+	/* Mouse sounds: use the pack's own mouse entries if it has any, otherwise
+	 * borrow a representative click so buttons are not silent. Packs here are
+	 * keyboard-only, so the borrowed sample is the common case. */
+	for (int c = BTN_MOUSE; c < BTN_MOUSE + 16 && c < MAX_KEYS; c++) {
+		if (g_press[c] && !g_mouse_press)
+			g_mouse_press = g_press[c];
+		if (g_release[c] && !g_mouse_release)
+			g_mouse_release = g_release[c];
+	}
+	if (!g_mouse_press) {
+		if (g_generic_n > 0)
+			g_mouse_press = g_generic[0];
+		else
+			g_mouse_press = g_press[KEY_SPACE] ? g_press[KEY_SPACE]
+							  : g_press[KEY_A];
+	}
+	if (!g_mouse_release)
+		g_mouse_release = g_generic_release;
+
 	return 0;
 }
 
@@ -561,18 +641,37 @@ static void *audio_thread(void *arg)
 typedef struct {
 	int fd;
 	int num;
+	int mouse;
 	char name[128];
 } device_t;
 
-static int looks_like_keyboard(int fd)
+/* A device worth reading: anything that reports letter keys, a mouse button,
+ * or a wheel. Mice report BTN_LEFT and no letter keys at all, so a keyboard-only
+ * test skips them entirely. */
+static int device_caps(int fd, int *has_keys, int *has_buttons, int *has_wheel)
 {
 	uint8_t bits[(KEY_CNT + 7) / 8];
+	uint8_t rel[(REL_CNT + 7) / 8];
+
+	*has_keys = *has_buttons = *has_wheel = 0;
+
+	/* EVIOCGBIT returns a positive byte count on success, not 0, so compare
+	 * against < 0. Testing == 0 here makes every device look unsupported. */
 	memset(bits, 0, sizeof(bits));
-	if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(bits)), bits) < 0)
-		return 0;
+	if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(bits)), bits) >= 0) {
 #define HAS(code) (bits[(code) / 8] & (1u << ((code) % 8)))
-	return (HAS(KEY_A) || HAS(KEY_Z) || HAS(KEY_SPACE)) ? 1 : 0;
+		*has_keys = HAS(KEY_A) || HAS(KEY_Z) || HAS(KEY_SPACE);
+		*has_buttons = HAS(BTN_LEFT) || HAS(BTN_RIGHT) || HAS(BTN_MIDDLE) ||
+			       HAS(BTN_SIDE) || HAS(BTN_EXTRA);
 #undef HAS
+	}
+
+	memset(rel, 0, sizeof(rel));
+	if (ioctl(fd, EVIOCGBIT(EV_REL, sizeof(rel)), rel) >= 0)
+		*has_wheel = (rel[REL_WHEEL / 8] & (1u << (REL_WHEEL % 8))) ||
+			     (rel[REL_HWHEEL / 8] & (1u << (REL_HWHEEL % 8)));
+
+	return *has_keys || *has_buttons || *has_wheel;
 }
 
 static int device_known(device_t *devs, int n, int num)
@@ -604,10 +703,18 @@ static int rescan_devices(device_t *devs, int n)
 		int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 		if (fd < 0)
 			continue;
-		if (!looks_like_keyboard(fd)) {
+		int has_keys = 0, has_buttons = 0, has_wheel = 0;
+		if (!device_caps(fd, &has_keys, &has_buttons, &has_wheel)) {
 			close(fd);
 			continue;
 		}
+		/* A pointer-only device is skipped unless the user asked for mouse
+		 * sounds, so a keyboard-only setup keeps paying nothing for them. */
+		if (!has_keys && !g_mouse) {
+			close(fd);
+			continue;
+		}
+		devs[n].mouse = !has_keys;
 
 		devs[n].fd = fd;
 		devs[n].num = (int)num;
@@ -626,19 +733,28 @@ static void handle_key(int code, int value)
 	if (code < 0 || code >= MAX_KEYS)
 		return;
 
+	if (!g_mouse && code >= BTN_MOUSE)
+		return;
+
 	if (g_trace && value == 1) {
 		printf("KEYIN %.3f\n", mono_ms());
 		fflush(stdout);
 	}
 
+	int is_mouse = (code >= BTN_MOUSE);
+
 	if (value == 1) {
 		const sample_t *s = g_press[code];
+		if (!s && is_mouse)
+			s = g_mouse_press;          /* pack's mouse entry, or the fallback */
 		if (!s && g_generic_n > 0)
 			s = g_generic[rnd() % g_generic_n];
 		if (s)
 			play_sample(s, g_gain);
 	} else if (value == 0) {
 		const sample_t *s = g_release[code];
+		if (!s && is_mouse)
+			s = g_mouse_release;
 		if (!s)
 			s = g_generic_release;
 		if (s)
@@ -655,15 +771,22 @@ static void *input_thread(void *arg)
 	int n = 0;
 
 	n = rescan_devices(devs, n);
-	if (n == 0) {
+	int have_keyboard = 0;
+	for (int i = 0; i < n; i++)
+		if (!devs[i].mouse)
+			have_keyboard = 1;
+	if (!have_keyboard) {
 		/* Give a Bluetooth or late-enumerating keyboard a moment, then
 		 * fail loudly: a player that runs but captures nothing looks
 		 * identical to a broken one. */
-		for (int tries = 0; tries < 10 && n == 0 && !g_stop; tries++) {
+		for (int tries = 0; tries < 10 && !have_keyboard && !g_stop; tries++) {
 			usleep(200 * 1000);
 			n = rescan_devices(devs, n);
+			for (int i = 0; i < n; i++)
+				if (!devs[i].mouse)
+					have_keyboard = 1;
 		}
-		if (n == 0) {
+		if (!have_keyboard) {
 			fprintf(stderr, "mechsim: no readable keyboard devices - make sure "
 				"you are in the 'input' group and have logged back in\n");
 			g_stop = 1;
@@ -673,7 +796,17 @@ static void *input_thread(void *arg)
 	}
 	/* Readiness marker: mechsim-toggle waits for this line so it can report
 	 * success the moment capture is live instead of polling blindly. */
-	printf("ready: capturing %d device(s)\n", n);
+	int nkeys = 0, npads = 0;
+	for (int i = 0; i < n; i++)
+		if (devs[i].mouse)
+			npads++;
+		else
+			nkeys++;
+	if (npads)
+		printf("ready: capturing %d device(s) (%d keyboard, %d mouse)\n",
+		       n, nkeys, npads);
+	else
+		printf("ready: capturing %d device(s)\n", n);
 	fflush(stdout);
 
 	struct pollfd pfds[MAX_DEVICES];
@@ -700,8 +833,23 @@ static void *input_thread(void *arg)
 			if (pfds[i].revents & POLLIN) {
 				struct input_event ev;
 				while (read(devs[i].fd, &ev, sizeof(ev)) == (ssize_t)sizeof(ev)) {
-					if (ev.type == EV_KEY)
+					if (ev.type == EV_KEY) {
 						handle_key(ev.code, ev.value);
+					} else if (ev.type == EV_REL && g_mouse) {
+						/* Wheel clicks are impulses with no release
+						 * event, so treat each tick as a press. */
+						if (ev.code == REL_WHEEL) {
+							for (int k = 0; k < ev.value; k++)
+								handle_key(CODE_WHEEL_UP, 1);
+							for (int k = 0; k < -ev.value; k++)
+								handle_key(CODE_WHEEL_DOWN, 1);
+						} else if (ev.code == REL_HWHEEL) {
+							for (int k = 0; k < ev.value; k++)
+								handle_key(CODE_WHEEL_RIGHT, 1);
+							for (int k = 0; k < -ev.value; k++)
+								handle_key(CODE_WHEEL_LEFT, 1);
+						}
+					}
 				}
 			} else if (pfds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
 				if (g_verbose)
@@ -794,6 +942,7 @@ static void usage(const char *prog)
 	printf("  -d, --data-dir DIR    Directory holding the sound packs\n");
 	printf("  -l, --list            List available sound packs\n");
 	printf("  -v, --verbose         Report loads, devices and mix details\n");
+	printf("  -m, --no-mouse        Ignore mouse buttons and the wheel\n");
 	printf("  -h, --help            Show this help\n");
 	printf("\nNeeds no root: read access to /dev/input/event* via the 'input' group.\n");
 }
@@ -817,6 +966,8 @@ int main(int argc, char **argv)
 			else if (IS("data-dir")) g_data_dir = val ? val : (i + 1 < argc ? argv[++i] : NULL);
 			else if (IS("list")) do_list = 1;
 			else if (IS("verbose")) g_verbose = 1;
+			else if (IS("mouse")) g_mouse = 1;
+			else if (IS("no-mouse")) g_mouse = 0;
 			else if (IS("help")) { usage(argv[0]); return 0; }
 			else { fprintf(stderr, "mechsim: unknown option %s\n", a); return 1; }
 #undef IS
@@ -828,6 +979,7 @@ int main(int argc, char **argv)
 				case 'd': g_data_dir = argv[++i]; break;
 				case 'l': do_list = 1; break;
 				case 'v': g_verbose = 1; break;
+				case 'm': g_mouse = 0; break;
 				case 'h': usage(argv[0]); return 0;
 				default:
 					fprintf(stderr, "mechsim: unknown option -%c\n", *p);
