@@ -57,7 +57,7 @@ Then make sure you can read `/dev/input`, which is all the permission this needs
 sudo usermod -a -G input "$USER"   # log out and back in afterwards
 ```
 
-No `sudo` is required to *run* it — only `libinput`, which this branch no longer
+No `sudo` is required to *run* it. Only `libinput`, which this branch no longer
 uses, needed that.
 
 ## Full Usage
@@ -83,7 +83,7 @@ and is what you want for a keybind.
 ## Available Sounds
 
 All 18 packs, ordered from deep thock to sharp click. The numbers are measured
-with `sox stat` on a real click from each pack, not guessed from the names —
+with `sox stat` on a real click from each pack, not guessed from the names.
 **bright Hz** is rough spectral frequency, **peak** is amplitude, so you can
 compare loudness without turning the volume up and down.
 
@@ -114,7 +114,7 @@ switch between them.
 Both pack formats work: `single` mode (one long file, `defines` giving
 `[start_ms, duration_ms]` per key) and `multi` mode (per-key files plus
 `GENERIC_R{0-4}` random variants and separate `soundup` release sounds). Packs
-that reference files they do not ship — `mxblue-travel` and `nk-cream` both do —
+that reference files they do not ship (`mxblue-travel` and `nk-cream` both do)
 load with those entries skipped and a count printed, instead of failing.
 
 ## Dependencies
@@ -125,7 +125,7 @@ load with those entries skipped and a count printed, instead of failing.
 - libsndfile1-dev
 
 That is the whole list. The rewrite dropped `libjson-c-dev`, `libinput-dev`,
-`libevdev-dev` and `libudev-dev` — config parsing is a ~200-line reader in
+`libevdev-dev` and `libudev-dev`. Config parsing is a ~200-line reader in
 `minijson.c` and input comes straight from `/dev/input`.
 
 ## The audio rewrite
@@ -134,10 +134,10 @@ The original opened a **new PulseAudio stream per keystroke**, after decoding th
 sound file from disk inside the keystroke path:
 
 1. `pthread_create` a thread
-2. `sf_open()` + `sf_readf_short()` — reopen and decode the file
-3. `pa_simple_new()` — new server connection
-4. `pa_simple_write()` + `pa_simple_drain()` — write, then wait for it to finish
-5. `pa_simple_free()` — tear the connection down
+2. `sf_open()` + `sf_readf_short()`: reopen and decode the file
+3. `pa_simple_new()`: new server connection
+4. `pa_simple_write()` + `pa_simple_drain()`: write, then wait for it to finish
+5. `pa_simple_free()`: tear the connection down
 
 Disk I/O, a codec and a server handshake between the key and the click. This
 branch instead:
@@ -145,7 +145,7 @@ branch instead:
 - **decodes and resamples every sample once at startup** into memory at 48 kHz
 - **keeps one stream** for the lifetime of the process
 - **mixes with a 64-voice pool**, so fast typing overlaps instead of dropping keys
-- **writes only while a voice is active** — the part that actually buys the latency
+- **writes only while a voice is active**, which is the part that actually buys the latency
 - **reads `/dev/input` directly** through evdev, so no root and no libinput
 
 ### Why the buffer is kept empty
@@ -154,8 +154,8 @@ The first version kept the sink topped up with silence in a free-running loop an
 measured a stubborn ~25 ms regardless of period size or target buffer: 1, 3, 5, 10,
 20, 30 and 50 ms targets all landed in the same place.
 
-Latency here is mostly *how much audio is already queued ahead of your click* —
-queued silence has to play out before the click behind it is heard. Writing only
+Latency here is mostly *how much audio is already queued ahead of your click*,
+since queued silence has to play out before the click behind it is heard. Writing only
 while a voice is active keeps the queue near-empty, which brought it to ~9 ms with
 no other change. The stream idles between keystrokes, and a `pthread_cond_signal`
 wakes the audio thread the instant a key registers a voice.
@@ -173,7 +173,7 @@ per key. `make bench` reproduces it.
 | p90 | 71 ms | 11.1 ms |
 | max | stalls to ~2 s | 11.5 ms |
 | CPU per keystroke | 3.6 ms | 5.4 ms |
-| CPU idle | — | 0.2–0.3 % of one core |
+| CPU idle | | 0.2 to 0.3 % of one core |
 | resident memory | ~4 MB | 9.9 MB |
 
 ## mechsim-toggle
@@ -203,7 +203,7 @@ NOTIFY=1     # 0 to suppress desktop notifications
 
 `start` waits for a real sink to exist before launching, because at login PipeWire
 can answer before the ALSA card is bound, and it only reports success once the
-player prints `ready:` — so a missing `input` group fails loudly instead of running
+player prints `ready:`, so a missing `input` group fails loudly instead of running
 silently. Put it on your `PATH` if you want it by name:
 
 ```bash
