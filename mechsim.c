@@ -367,7 +367,88 @@ static char *read_whole_file(const char *path)
 	return buf;
 }
 
-static int load_pack(const char *pack_dir)
+/* A view of [start_ms, start_ms+dur_ms) inside an already-loaded sample.
+ * Not owned: the backing sample stays alive in the cache. */
+static sample_t *slice_ms(const sample_t *all, double start_ms, double dur_ms)
+{
+	if (!all || dur_ms <= 0)
+		return NULL;
+	size_t start = (size_t)(start_ms * OUT_RATE / 1000.0);
+	size_t len = (size_t)(dur_ms * OUT_RATE / 1000.0);
+	if (start >= all->frames || len == 0)
+		return NULL;
+	if (start + len > all->frames)
+		len = all->frames - start;
+
+	sample_t *s = xmalloc(sizeof(*s));
+	s->data = all->data + start * (size_t)all->ch;
+	s->frames = len;
+	s->ch = all->ch;
+	s->owned = 0;
+	return s;
+}
+
+/* MechVibes V2 (definition_method/audio_file/definitions with timing pairs).
+ * Used by the mouse pack format. Timing is [[press_start, press_end]] or
+ * [[press_start, press_end], [release_start, release_end]]. */
+static int load_v2(const char *pack_dir, mj_val *root, int mouse_only)
+{
+	const char *method = mj_str(mj_get(root, "definition_method"));
+	const char *audio = mj_str(mj_get(root, "audio_file"));
+	mj_val *defs = mj_get(root, "definitions");
+	if (!defs)
+		defs = mj_get(root, "defs");
+	int multi = method && strcmp(method, "multi") == 0;
+
+	if (g_verbose)
+		fprintf(stderr, "mechsim: pack type v2/%s\n", multi ? "multi" : "single");
+
+	for (size_t i = 0; defs && i < mj_len(defs); i++) {
+		const char *name = mj_key_at(defs, i);
+		mj_val *entry = mj_at(defs, i);
+		if (!name || !entry)
+			continue;
+
+		int is_rel = 0;
+		int code = key_name_to_code(name, &is_rel);
+		if (code < 0)
+			continue;
+		if (mouse_only && code < BTN_MOUSE)
+			continue;
+
+		const char *own = mj_str(mj_get(entry, "audio_file"));
+		const char *file = own ? own : audio;
+		if (!file)
+			continue;
+
+		char *full = path_join(pack_dir, file);
+		sample_t *base = load_cached(full);
+		free(full);
+		if (!base)
+			continue;
+
+		mj_val *timing = mj_get(entry, "timing");
+		if (!timing || mj_len(timing) == 0)
+			continue;
+
+		/* segment 0 is the press, segment 1 the release if present */
+		for (size_t seg = 0; seg < mj_len(timing) && seg < 2; seg++) {
+			mj_val *pair = mj_at(timing, seg);
+			if (mj_len(pair) < 2)
+				continue;
+			double a = mj_num(mj_at(pair, 0), 0);
+			double b = mj_num(mj_at(pair, 1), 0);
+			sample_t *slice = slice_ms(base, a, b - a);
+			if (!slice)
+				continue;
+			set_map(seg == 0 ? g_press : g_release, code, slice);
+		}
+	}
+
+	return 0;
+}
+
+static int load_pack(const char *pack_dir, int mouse_only)
 {
 	char *cfg_path = path_join(pack_dir, "config.json");
 	char *text = read_whole_file(cfg_path);
@@ -385,6 +466,15 @@ static int load_pack(const char *pack_dir)
 		return -1;
 	}
 
+	/* V2 configs (the MechVibes mouse-pack format) are recognised by
+	 * definition_method/definitions. */
+	if (mj_get(root, "definition_method") ||
+	    (mj_get(root, "definitions") && !mj_get(root, "defines"))) {
+		int rc = load_v2(pack_dir, root, mouse_only);
+		mj_free(root);
+		return rc;
+	}
+
 	const char *type = mj_str(mj_get(root, "key_define_type"));
 	int is_multi = type && strcmp(type, "multi") == 0;
 	const char *sound = mj_str(mj_get(root, "sound"));
@@ -394,7 +484,7 @@ static int load_pack(const char *pack_dir)
 		fprintf(stderr, "mechsim: pack type %s\n", is_multi ? "multi" : "single");
 
 	if (is_multi) {
-		if (sound)
+		if (sound && !mouse_only)
 			expand_pattern(pack_dir, sound);
 		if (soundup) {
 			char *p = path_join(pack_dir, soundup);
@@ -463,6 +553,9 @@ static int load_pack(const char *pack_dir)
 	}
 
 	mj_free(root);
+
+	if (mouse_only)
+		return 0;
 
 	/* Mouse sounds: use the pack's own mouse entries if it has any, otherwise
 	 * borrow a representative click so buttons are not silent. Packs here are
@@ -880,6 +973,7 @@ static void *input_thread(void *arg)
 }
 
 static const char *g_data_dir = NULL;
+static const char *g_mouse_pack = NULL;
 
 static int list_packs(const char *dir)
 {
@@ -940,6 +1034,7 @@ static void usage(const char *prog)
 	printf("  -s, --sound NAME      Sound pack (default: eg-oreo)\n");
 	printf("  -V, --volume N        Volume 0-100 (default: 50)\n");
 	printf("  -d, --data-dir DIR    Directory holding the sound packs\n");
+	printf("  -M, --mouse-pack DIR  Separate pack directory for mouse sounds\n");
 	printf("  -l, --list            List available sound packs\n");
 	printf("  -v, --verbose         Report loads, devices and mix details\n");
 	printf("  -m, --no-mouse        Ignore mouse buttons and the wheel\n");
@@ -964,6 +1059,7 @@ int main(int argc, char **argv)
 			if (IS("sound")) pack = val ? val : (i + 1 < argc ? argv[++i] : pack);
 			else if (IS("volume")) volume = atoi(val ? val : (i + 1 < argc ? argv[++i] : "50"));
 			else if (IS("data-dir")) g_data_dir = val ? val : (i + 1 < argc ? argv[++i] : NULL);
+			else if (IS("mouse-pack")) g_mouse_pack = val ? val : (i + 1 < argc ? argv[++i] : NULL);
 			else if (IS("list")) do_list = 1;
 			else if (IS("verbose")) g_verbose = 1;
 			else if (IS("mouse")) g_mouse = 1;
@@ -977,6 +1073,7 @@ int main(int argc, char **argv)
 				case 's': pack = argv[++i]; break;
 				case 'V': volume = atoi(argv[++i]); break;
 				case 'd': g_data_dir = argv[++i]; break;
+				case 'M': g_mouse_pack = argv[++i]; break;
 				case 'l': do_list = 1; break;
 				case 'v': g_verbose = 1; break;
 				case 'm': g_mouse = 0; break;
@@ -1011,11 +1108,24 @@ int main(int argc, char **argv)
 
 	struct timespec t0, t1;
 	clock_gettime(CLOCK_MONOTONIC, &t0);
-	if (load_pack(pack_dir) != 0) {
+	if (load_pack(pack_dir, 0) != 0) {
 		free(pack_dir);
 		return 1;
 	}
 	free(pack_dir);
+
+	/* An optional second pack just for mouse clicks, so keyboard and mouse
+	 * sounds can come from different places. */
+	if (g_mouse_pack) {
+		if (access(g_mouse_pack, R_OK) != 0) {
+			fprintf(stderr, "mechsim: cannot read mouse pack %s\n", g_mouse_pack);
+			return 1;
+		}
+		if (load_pack(g_mouse_pack, 1) != 0) {
+			fprintf(stderr, "mechsim: mouse pack %s failed to load\n", g_mouse_pack);
+			return 1;
+		}
+	}
 	clock_gettime(CLOCK_MONOTONIC, &t1);
 	double load_ms = (t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1e6;
 
@@ -1027,8 +1137,11 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	printf("pack: %s  volume: %d%%  load: %.0f ms  files: %zu",
-	       pack, volume, load_ms, g_cache_n);
+	printf("pack: %s", pack);
+	if (g_mouse_pack)
+		printf("  mouse: %s", g_mouse_pack);
+	printf("  volume: %d%%  load: %.0f ms  files: %zu",
+	       volume, load_ms, g_cache_n);
 	if (g_missing)
 		printf("  (%zu referenced files absent)", g_missing);
 	printf("\n");

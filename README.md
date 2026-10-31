@@ -68,6 +68,8 @@ uses, needed that.
       -s, --sound SOUND_NAME   Select sound pack (default: eg-oreo)
       -V, --volume VOLUME      Set volume [0-100] (default: 50)
       -d, --data-dir DIR       Directory holding the sound packs
+      -M, --mouse-pack DIR     Separate pack directory for click sounds
+      -m, --no-mouse           Ignore mouse buttons and the wheel
       -l, --list               List available sound packs
       -h, --help               Show this help message
       -v, --verbose            Enable verbose output
@@ -85,14 +87,27 @@ and is what you want for a keybind.
 Left, right and middle clicks, the side buttons, and the scroll wheel make sound
 too. Pass `-m` / `--no-mouse` to ignore them and capture keyboards only.
 
-Packs written for MechVibes can name their mouse entries directly
+### Click sounds from a separate pack
+
+Keyboard and mouse can use different packs, which is how MechVibes organises
+things (it ships `soundpacks/mouse/`). Point `-M` at a directory:
+
+```
+./mechsim -s nk-cream -M ./mousepacks/ping
+```
+
+`mousepacks/` here holds the four MechVibes mouse packs (ping, chat, vibrate,
+wooden) in their original V2 config format, which this loader reads directly:
+`definition_method`, `audio_file`, and `definitions` with `timing` ranges where
+the first pair is the press and the second, if present, the release.
+
+Packs can instead name mouse entries inside the keyboard pack itself
 (`MouseLeft`, `MouseRight`, `MouseMiddle`, `MouseWheelUp`, `MouseWheelDown`,
 `MouseWheelLeft`, `MouseWheelRight`), and numeric evdev codes work as before.
-None of the packs bundled here define mouse sounds, so a click borrows a
-keyboard sample from the same pack: the generic random press in `multi` packs,
-or the space bar slice in `single` packs. That keeps clicks audible without a
-second sound pack to manage, and a pack that does define `MouseLeft` overrides
-it.
+When nothing defines a given button, the click borrows a keyboard sample from
+the same pack: the generic random press in `multi` packs, or the space bar
+slice in `single` packs. Clicks stay audible without a second pack to manage,
+and anything a pack does define wins over the borrowed sample.
 
 ## Available Sounds
 
@@ -204,6 +219,9 @@ A small shell wrapper so it can live behind a keybind instead of a terminal:
 ./mechsim-toggle pack NAME  # switch pack and restart
 ./mechsim-toggle next       # cycle packs (prev goes backwards)
 ./mechsim-toggle vol 40     # volume 0-100
+./mechsim-toggle mousepack  # list click packs
+./mechsim-toggle mousepack ping   # clicks use mousepacks/ping
+./mechsim-toggle mousepack none   # borrow clicks from the keyboard pack
 ./mechsim-toggle help
 ```
 

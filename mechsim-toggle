@@ -23,6 +23,7 @@ CONF="${XDG_CONFIG_HOME:-$HOME/.config}/mechsim/config"
 LOCK="$RUNDIR/mechsim-toggle.lock"
 
 PACK="eg-oreo"
+MOUSEPACK=""          # optional: name of a pack in mousepacks/ for click sounds
 VOLUME="50"
 NOTIFY=1
 if [ -r "$CONF" ]; then
@@ -103,7 +104,12 @@ start() {
 	# later on/off/toggle invocation.
 	attempt=1
 	while :; do
-		nohup "$BIN" -s "$PACK" -V "$VOLUME" >"$LOGFILE" 2>&1 9>&- &
+		mp=""
+		if [ -n "$MOUSEPACK" ] && [ -d "$MOUSEDIR/$MOUSEPACK" ]; then
+			mp="-M $MOUSEDIR/$MOUSEPACK"
+		fi
+		# shellcheck disable=SC2086
+		nohup "$BIN" -s "$PACK" -V "$VOLUME" $mp >"$LOGFILE" 2>&1 9>&- &
 		pid=$!
 		echo "$pid" >"$PIDFILE"
 		# Wait for either the "ready:" line (capture live) or the process
@@ -165,8 +171,22 @@ stop() {
 
 # Where the packs live: same search order as the player itself.
 AUDIODIR="${MECHSIM_AUDIO_DIR:-$(dirname "$BIN")/audio}"
+MOUSEDIR="${MECHSIM_MOUSE_DIR:-$(dirname "$BIN")/mousepacks}"
 [ -d "$AUDIODIR" ] || AUDIODIR=/usr/local/share/mechsim/audio
 [ -d "$AUDIODIR" ] || AUDIODIR=/usr/share/mechsim/audio
+
+list_mousepacks() {
+	[ -d "$MOUSEDIR" ] || { echo "no mouse pack directory ($MOUSEDIR)"; return 0; }
+	for d in "$MOUSEDIR"/*/; do
+		[ -d "$d" ] || continue
+		name=$(basename "$d")
+		if [ "$name" = "$MOUSEPACK" ]; then
+			echo "* $name"
+		else
+			echo "  $name"
+		fi
+	done
+}
 
 list_packs() {
 	if [ ! -d "$AUDIODIR" ]; then
@@ -242,7 +262,7 @@ rest)
 	;;
 status)
 	if running; then
-		echo "on (pid $(cat "$PIDFILE"), pack $PACK, volume ${VOLUME}%)"
+		echo "on (pid $(cat "$PIDFILE"), pack $PACK, mouse ${MOUSEPACK:-borrowed}, volume ${VOLUME}%)"
 		exit 0
 	fi
 	echo "off"
@@ -254,6 +274,39 @@ toggle)
 	;;
 packs | list)
 	list_packs
+	;;
+mouse | mousepack)
+	# mousepack NAME   pick the pack used for clicks, or "none" to borrow from
+	# the keyboard pack
+	if [ -z "${2:-}" ]; then
+		echo "current: ${MOUSEPACK:-none (borrowed from $PACK)}"
+		echo
+		list_mousepacks
+		echo
+		echo "usage: $(basename "$0") mousepack <name>|none"
+		exit 0
+	fi
+	take_lock || exit 0
+	if [ "$2" = none ] || [ "$2" = off ]; then
+		set_conf MOUSEPACK ""
+		MOUSEPACK=""
+		echo "mouse sounds -> borrowed from $PACK"
+	else
+		if [ ! -d "$MOUSEDIR/$2" ]; then
+			echo "no such mouse pack: $2" >&2
+			list_mousepacks >&2
+			exit 1
+		fi
+		set_conf MOUSEPACK "$2"
+		MOUSEPACK="$2"
+		echo "mouse sounds -> $MOUSEPACK"
+	fi
+	if running; then
+		stop >/dev/null
+		start
+	else
+		notify "Mouse sounds" "${MOUSEPACK:-borrowed from $PACK} (will apply when turned on)"
+	fi
 	;;
 pack)
 	# pack NAME   switch sound pack and restart if running
@@ -328,6 +381,7 @@ $(basename "$0") - toggle the keyboard sound player
   rest                  restart (re-reads the config)
   status                "on (pid …, pack …, volume …%)" or "off"; exit 0 if on
   packs                 list sound packs, * marks the current one
+  mousepack [NAME]      list click packs, or switch to NAME (none = borrow)
   pack NAME             switch pack and restart
   next | prev           cycle through packs
   vol N                 set volume 0-100 and restart
