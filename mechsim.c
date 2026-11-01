@@ -291,8 +291,8 @@ int main(int argc, char *argv[]) {
         }
 
         // Use -n flag to prevent sudo from prompting again (credentials should be cached)
-        char sudo_path[256];
-        snprintf(sudo_path, sizeof(sudo_path), "%s/bin/sudo", PACKAGE_PREFIX);
+        // char sudo_path[256];
+        // snprintf(sudo_path, sizeof(sudo_path), "%s/bin/sudo", PACKAGE_PREFIX);
         // Search for sudo in system path
         execlp("sudo", "sudo", "-n", get_key_presses_path, (char *)NULL);
         perror("execl get_key_presses");
