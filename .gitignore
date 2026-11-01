@@ -1,0 +1,9 @@
+# build output
+/mechsim
+/keyprobe
+*.o
+*.a
+
+# editor / OS noise
+*.swp
+.DS_Store
