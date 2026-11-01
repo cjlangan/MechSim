@@ -85,7 +85,9 @@ and is what you want for a keybind.
 ## Mouse and wheel
 
 Left, right and middle clicks, the side buttons, and the scroll wheel make sound
-too. Pass `-m` / `--no-mouse` to ignore them and capture keyboards only.
+too. Pass `-m` / `--no-mouse` to ignore them and capture keyboards only, or use
+`mechsim-toggle mouse off` to flip it while the player keeps running; the setting
+is remembered and the keyboard is unaffected either way.
 
 ### Click sounds from a separate pack
 
@@ -219,6 +221,9 @@ A small shell wrapper so it can live behind a keybind instead of a terminal:
 ./mechsim-toggle pack NAME  # switch pack and restart
 ./mechsim-toggle next       # cycle packs (prev goes backwards)
 ./mechsim-toggle vol 40     # volume 0-100
+./mechsim-toggle mouse       # show whether clicks are on
+./mechsim-toggle mouse off   # mute clicks and wheel, keyboard keeps working
+./mechsim-toggle mouse toggle
 ./mechsim-toggle mousepack  # list click packs
 ./mechsim-toggle mousepack ping   # clicks use mousepacks/ping
 ./mechsim-toggle mousepack none   # borrow clicks from the keyboard pack

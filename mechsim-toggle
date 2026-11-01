@@ -24,6 +24,7 @@ LOCK="$RUNDIR/mechsim-toggle.lock"
 
 PACK="eg-oreo"
 MOUSEPACK=""          # optional: name of a pack in mousepacks/ for click sounds
+MOUSE="1"             # 0 ignores mouse buttons and the wheel entirely
 VOLUME="50"
 NOTIFY=1
 if [ -r "$CONF" ]; then
@@ -108,6 +109,7 @@ start() {
 		if [ -n "$MOUSEPACK" ] && [ -d "$MOUSEDIR/$MOUSEPACK" ]; then
 			mp="-M $MOUSEDIR/$MOUSEPACK"
 		fi
+		[ "$MOUSE" = "0" ] && mp="$mp --no-mouse"
 		# shellcheck disable=SC2086
 		nohup "$BIN" -s "$PACK" -V "$VOLUME" $mp >"$LOGFILE" 2>&1 9>&- &
 		pid=$!
@@ -262,7 +264,12 @@ rest)
 	;;
 status)
 	if running; then
-		echo "on (pid $(cat "$PIDFILE"), pack $PACK, mouse ${MOUSEPACK:-borrowed}, volume ${VOLUME}%)"
+		if [ "$MOUSE" = "0" ]; then
+			m="off"
+		else
+			m="${MOUSEPACK:-borrowed}"
+		fi
+		echo "on (pid $(cat "$PIDFILE"), pack $PACK, mouse $m, volume ${VOLUME}%)"
 		exit 0
 	fi
 	echo "off"
@@ -275,7 +282,54 @@ toggle)
 packs | list)
 	list_packs
 	;;
-mouse | mousepack)
+mouse)
+	# mouse [on|off|toggle]   turn click and wheel sounds on or off
+	# leaving the keyboard pack running either way
+	set_mouse() {
+		set_conf MOUSE "$1"
+		MOUSE="$1"
+		if [ "$1" = "0" ]; then
+			echo "mouse sounds -> off"
+		else
+			echo "mouse sounds -> on (${MOUSEPACK:-borrowed from $PACK})"
+		fi
+	}
+	case "${2:-}" in
+	'')
+		if [ "$MOUSE" = "0" ]; then
+			echo "mouse sounds: off"
+		else
+			echo "mouse sounds: on (${MOUSEPACK:-borrowed from $PACK})"
+		fi
+		echo
+		echo "usage: $(basename "$0") mouse on|off|toggle"
+		exit 0
+		;;
+	on | enable | 1)
+		take_lock || exit 0
+		set_mouse 1
+		;;
+	off | disable | 0)
+		take_lock || exit 0
+		set_mouse 0
+		;;
+	toggle)
+		take_lock || exit 0
+		if [ "$MOUSE" = "0" ]; then set_mouse 1; else set_mouse 0; fi
+		;;
+	*)
+		echo "usage: $(basename "$0") mouse on|off|toggle" >&2
+		exit 2
+		;;
+	esac
+	if running; then
+		stop >/dev/null
+		start
+	else
+		notify "Mouse sounds" "$([ "$MOUSE" = "0" ] && echo off || echo on) (will apply when turned on)"
+	fi
+	;;
+mousepack)
 	# mousepack NAME   pick the pack used for clicks, or "none" to borrow from
 	# the keyboard pack
 	if [ -z "${2:-}" ]; then
@@ -299,7 +353,13 @@ mouse | mousepack)
 		fi
 		set_conf MOUSEPACK "$2"
 		MOUSEPACK="$2"
-		echo "mouse sounds -> $MOUSEPACK"
+		if [ "$MOUSE" != "1" ]; then
+			set_conf MOUSE 1
+			MOUSE="1"
+			echo "mouse sounds -> $MOUSEPACK (also turning clicks on)"
+		else
+			echo "mouse sounds -> $MOUSEPACK"
+		fi
 	fi
 	if running; then
 		stop >/dev/null
@@ -381,6 +441,7 @@ $(basename "$0") - toggle the keyboard sound player
   rest                  restart (re-reads the config)
   status                "on (pid …, pack …, volume …%)" or "off"; exit 0 if on
   packs                 list sound packs, * marks the current one
+  mouse on|off|toggle   turn click and wheel sounds on or off
   mousepack [NAME]      list click packs, or switch to NAME (none = borrow)
   pack NAME             switch pack and restart
   next | prev           cycle through packs
