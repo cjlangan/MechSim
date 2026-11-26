@@ -76,9 +76,6 @@ sudo usermod -a -G input "$USER"   # log out and back in afterwards
       mechsim -s cherrymx-blue-abs  # Use Cherry MX Blue ABS sound
       mechsim -l                    # List all available sounds
 
-It runs in the foreground until Ctrl+C. `mechsim-toggle` (below) daemonises it
-and is what you want for a keybind.
-
 ## Available Sounds
 
 All 18 packs, ordered from deep thock to sharp click. The numbers are measured
