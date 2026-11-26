@@ -23,14 +23,9 @@ https://github.com/user-attachments/assets/622ff7b3-11c9-4f51-be4d-5f19565adbf5
 
 - **Runs in the background.** `mechsim on` starts the player and gives you your
   terminal back.
-- **One binary.** Start, stop, switch packs and set the volume with `mechsim`
-  itself.
 - **Remembers your settings** in a config file.
 - **Low latency, no sudo.** A keystroke reaches the speaker in about 10 ms.
 - **Mouse sounds** for clicks and the wheel, with optional separate mouse packs.
-
-The command line has changed. If you're coming from an earlier version, read
-[Upgrading to 2.0.0](#upgrading-to-200).
 
 ## Quick Usage Guide
 
@@ -185,6 +180,8 @@ switch between them.
 
 ## Custom sound packs
 
+***TODO: verify this is all correct***
+
 A pack is a folder containing a `config.json` and its audio files. The folder
 name is the pack name. mechsim reads the Mechvibes V1 (`single` and `multi`) and
 V2 (`definitions`) layouts.
@@ -220,30 +217,6 @@ or `/tmp/mechsim-<uid>/`.
 
 Developers can set `MECHSIM_TRACE=1` when starting the player to log key and mix
 timestamps for latency measurements.
-
-## Upgrading to 2.0.0
-
-**Stop the old player first** with `mechsim-toggle off` (or `pkill -x mechsim`).
-2.0.0 does not detect a player started by an earlier version.
-
-Then update any keybinds, autostart entries and scripts. `mechsim-toggle` is
-replaced by `mechsim`, with the same command names.
-
-| before | now |
-|---|---|
-| `mechsim` (start playing) | `mechsim on` |
-| `mechsim-toggle` | `mechsim toggle` |
-| `mechsim-toggle <command>` | `mechsim <command>` |
-| `-s NAME`, `--sound` | `mechsim pack NAME` |
-| `-V N`, `--volume` | `mechsim vol N` |
-| `-l`, `--list` | `mechsim packs` |
-| `-m`, `--no-mouse` | `mechsim mouse off` |
-| `-M DIR`, `--mouse-pack` | `mechsim mousepack NAME` (a name, not a path) |
-| `-d DIR`, `--data-dir` | `MECHSIM_AUDIO_DIR=DIR` |
-| `-v`, `--verbose` | check the log file |
-
-Your existing config file still works, as long as it doesn't rely on shell
-variables or commands.
 
 ## Dependencies
 
