@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/622ff7b3-11c9-4f51-be4d-5f19565adbf5
 > without sudo. See [The audio rewrite](#the-audio-rewrite) for what changed and
 > why.
 
-## Usage
+## Quick Usage Guide
 
 ```bash
 mechsim         # default uses sound eg-oreo at volume 50
@@ -82,35 +82,6 @@ uses, needed that.
 It runs in the foreground until Ctrl+C. `mechsim-toggle` (below) daemonises it
 and is what you want for a keybind.
 
-## Mouse and wheel
-
-Left, right and middle clicks, the side buttons, and the scroll wheel make sound
-too. Pass `-m` / `--no-mouse` to ignore them and capture keyboards only, or use
-`mechsim-toggle mouse off` to flip it while the player keeps running; the setting
-is remembered and the keyboard is unaffected either way.
-
-### Click sounds from a separate pack
-
-Keyboard and mouse can use different packs, which is how MechVibes organises
-things (it ships `soundpacks/mouse/`). Point `-M` at a directory:
-
-```
-./mechsim -s nk-cream -M ./mousepacks/ping
-```
-
-`mousepacks/` here holds the four MechVibes mouse packs (ping, chat, vibrate,
-wooden) in their original V2 config format, which this loader reads directly:
-`definition_method`, `audio_file`, and `definitions` with `timing` ranges where
-the first pair is the press and the second, if present, the release.
-
-Packs can instead name mouse entries inside the keyboard pack itself
-(`MouseLeft`, `MouseRight`, `MouseMiddle`, `MouseWheelUp`, `MouseWheelDown`,
-`MouseWheelLeft`, `MouseWheelRight`), and numeric evdev codes work as before.
-When nothing defines a given button, the click borrows a keyboard sample from
-the same pack: the generic random press in `multi` packs, or the space bar
-slice in `single` packs. Clicks stay audible without a second pack to manage,
-and anything a pack does define wins over the borrowed sample.
-
 ## Available Sounds
 
 All 18 packs, ordered from deep thock to sharp click. The numbers are measured
@@ -142,12 +113,6 @@ compare loudness without turning the volume up and down.
 Packs differ a lot in loudness (peak 0.12 to 0.93), so adjust volume when you
 switch between them.
 
-Both pack formats work: `single` mode (one long file, `defines` giving
-`[start_ms, duration_ms]` per key) and `multi` mode (per-key files plus
-`GENERIC_R{0-4}` random variants and separate `soundup` release sounds). Packs
-that reference files they do not ship (`mxblue-travel` and `nk-cream` both do)
-load with those entries skipped and a count printed, instead of failing.
-
 ## Dependencies
 
 - build-essential
@@ -155,79 +120,27 @@ load with those entries skipped and a count printed, instead of failing.
 - libpulse-dev
 - libsndfile1-dev
 
-That is the whole list. The rewrite dropped `libjson-c-dev`, `libinput-dev`,
-`libevdev-dev` and `libudev-dev`. Config parsing is a ~200-line reader in
-`minijson.c` and input comes straight from `/dev/input`.
-
-## The audio rewrite
-
-The original opened a **new PulseAudio stream per keystroke**, after decoding the
-sound file from disk inside the keystroke path:
-
-1. `pthread_create` a thread
-2. `sf_open()` + `sf_readf_short()`: reopen and decode the file
-3. `pa_simple_new()`: new server connection
-4. `pa_simple_write()` + `pa_simple_drain()`: write, then wait for it to finish
-5. `pa_simple_free()`: tear the connection down
-
-Disk I/O, a codec and a server handshake between the key and the click. This
-branch instead:
-
-- **decodes and resamples every sample once at startup** into memory at 48 kHz
-- **keeps one stream** for the lifetime of the process
-- **mixes with a 64-voice pool**, so fast typing overlaps instead of dropping keys
-- **writes only while a voice is active**, which is the part that actually buys the latency
-- **reads `/dev/input` directly** through evdev, so no root and no libinput
-
-### Why the buffer is kept empty
-
-The first version kept the sink topped up with silence in a free-running loop and
-measured a stubborn ~25 ms regardless of period size or target buffer: 1, 3, 5, 10,
-20, 30 and 50 ms targets all landed in the same place.
-
-Latency here is mostly *how much audio is already queued ahead of your click*,
-since queued silence has to play out before the click behind it is heard. Writing only
-while a voice is active keeps the queue near-empty, which brought it to ~9 ms with
-no other change. The stream idles between keystrokes, and a `pthread_cond_signal`
-wakes the audio thread the instant a key registers a voice.
-
-### Measured
-
-ThinkPad T480 (i5-8250U), Void Linux, PipeWire 1.6.9 / `pipewire-pulse`, sink
-`s32le 2ch 48000Hz`. Synthetic keystrokes via `/dev/uinput`, audio captured from
-the sink monitor, both sides timestamped on `CLOCK_MONOTONIC`, one onset paired
-per key. `make bench` reproduces it.
-
-| | original | this branch |
-|---|---|---|
-| median | 60 ms | **8.9 ms** |
-| p90 | 71 ms | 11.1 ms |
-| max | stalls to ~2 s | 11.5 ms |
-| CPU per keystroke | 3.6 ms | 5.4 ms |
-| CPU idle | | 0.2 to 0.3 % of one core |
-| resident memory | ~4 MB | 9.9 MB |
-
 ## mechsim-toggle
 
 A small shell wrapper so it can live behind a keybind instead of a terminal:
 
 ```bash
-./mechsim-toggle            # flip: start, or stop if running
-./mechsim-toggle on
-./mechsim-toggle off
-./mechsim-toggle rest       # restart, re-reading the config
-./mechsim-toggle status     # "on (pid …, pack …, volume …%)" or "off"; exit 0 if on
-./mechsim-toggle packs      # list packs, * marks the current one
-./mechsim-toggle pack NAME  # switch pack and restart
-./mechsim-toggle next       # cycle packs (prev goes backwards)
-./mechsim-toggle vol 40     # volume 0-100
-./mechsim-toggle mouse       # show whether clicks are on
-./mechsim-toggle mouse off   # mute clicks and wheel, keyboard keeps working
-./mechsim-toggle mouse toggle
-./mechsim-toggle mousepack  # list click packs
-./mechsim-toggle mousepack ping   # clicks use mousepacks/ping
-./mechsim-toggle mousepack none   # borrow clicks from the keyboard pack
-./mechsim-toggle help
+mechsim-toggle            # flip: start, or stop if running
+mechsim-toggle on
+mechsim-toggle off
+mechsim-toggle rest       # restart, re-reading the config
+mechsim-toggle status     # "on (pid …, pack …, volume …%)" or "off"; exit 0 if on
+mechsim-toggle packs      # list packs, * marks the current one
+mechsim-toggle pack NAME  # switch pack and restart
+mechsim-toggle next       # cycle packs (prev goes backwards)
+mechsim-toggle vol 40     # volume 0-100
+mechsim-toggle mouse       # show whether clicks are on
+mechsim-toggle mouse off   # mute clicks and wheel, keyboard keeps working
+mechsim-toggle mouse toggle
+mechsim-toggle mousepack  # list click packs
+mechsim-toggle mousepack ping   # clicks use mousepacks/ping
+mechsim-toggle mousepack none   # borrow clicks from the keyboard pack
+mechsim-toggle help
 ```
 
 Settings live in `~/.config/mechsim/config`:
@@ -254,35 +167,6 @@ spawn-sh-at-startup "~/path/to/MechSim/mechsim-toggle on"
 Mod+Shift+S hotkey-overlay-title="Toggle Keyboard Sounds" { spawn-sh "~/path/to/MechSim/mechsim-toggle"; }
 ```
 
-## Benchmarking
-
-```bash
-make keyprobe        # synthetic keyboard injector, uses /dev/uinput
-make bench           # 40 keys, reports median/p90/max
-```
-
-`bench.py` captures the default sink's monitor and pairs one audio onset per key.
-It prints the matched count beside the percentiles: packs that ship press *and*
-release sounds emit two events per key, so a low count means the pairing needs a
-look, not that the player is slow.
-
-## Motivation
-
-The motivation behind this project was that I couldn't hear my keyboard presses
-in screen-recordings or when I had headphones on. I tried other programs such
-as [MechVibes](https://github.com/hainguyents13/mechvibes) (which I took the
-sound files and configs from) -- but none were Wayland compatible.
-
-I decided to take some backend code from [Show Me The
-Key](https://github.com/AlynxZhou/showmethekey) which could detect global key
-presses -- even on Wayland -- and fit it to my use case.
-
-Admittedly, I used a lot of AI to help me complete this, since I was more
-interested in just getting it to work to enjoy the sweet sweet keypresses. But
-I have since decided to share the code if others found themselves in a similar
-position.
-
 ## License
 
-MIT, as upstream. Sound packs come from
-[Mechvibes](https://github.com/hainguyents13/mechvibes).
+MIT, as upstream. Sound packs come from [Mechvibes](https://github.com/hainguyents13/mechvibes).
