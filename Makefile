@@ -1,25 +1,26 @@
 CC      ?= gcc
 CFLAGS  ?= -O2 -g -Wall -Wextra -std=gnu11
 PREFIX  ?= /usr/local
+SRC_DIR := src
 
 PKGS    := libpulse-simple sndfile
 CFLAGS  += $(shell pkg-config --cflags $(PKGS))
 LIBS    := $(shell pkg-config --libs $(PKGS)) -lpthread -lm
 
 BIN     := mechsim
-SRC     := mechsim.c minijson.c
+SRC     := $(SRC_DIR)/mechsim.c $(SRC_DIR)/minijson.c
 
 all: $(BIN)
 
-$(BIN): $(SRC) minijson.h
+$(BIN): $(SRC) $(SRC_DIR)/minijson.h
 	$(CC) $(CFLAGS) -o $@ $(SRC) $(LIBS)
 
 # Synthetic keystroke injector used for the latency benchmark.
-keyprobe: keyprobe.c
-	$(CC) $(CFLAGS) -o $@ keyprobe.c
+keyprobe: $(SRC_DIR)/keyprobe.c
+	$(CC) $(CFLAGS) -o $@ $(SRC_DIR)/keyprobe.c
 
 bench: $(BIN) keyprobe
-	python3 bench.py
+	python3 $(SRC_DIR)/bench.py
 
 install: $(BIN)
 	install -Dm755 $(BIN) $(DESTDIR)$(PREFIX)/bin/$(BIN)
