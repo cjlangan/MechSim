@@ -1,65 +1,36 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -std=c99
-PREFIX ?= /usr
+CC      ?= gcc
+CFLAGS  ?= -O2 -g -Wall -Wextra -std=gnu11
+PREFIX  ?= /usr/local
 
-# Pass PACKAGE_PREFIX macro for config.h
-CPPFLAGS = -DPACKAGE_PREFIX=\"$(PREFIX)\" $(shell pkg-config --cflags libevdev)
+PKGS    := libpulse-simple sndfile
+CFLAGS  += $(shell pkg-config --cflags $(PKGS))
+LIBS    := $(shell pkg-config --libs $(PKGS)) -lpthread -lm
 
-LDFLAGS_SOUND = -ljson-c -lpulse -lpulse-simple -lsndfile -lpthread
-LDFLAGS_KEYBOARD = $(shell pkg-config --libs libevdev libinput libudev) -lpthread
+BIN     := mechsim
+SRC     := mechsim.c minijson.c
 
-# Targets
-MECHSIM_TARGET = mechsim
-SOUND_TARGET = keyboard_sound_player
-KEYBOARD_TARGET = get_key_presses
+all: $(BIN)
 
-# Sources
-MECHSIM_SOURCE = mechsim.c
-SOUND_SOURCE = keyboard_sound_player.c
-KEYBOARD_SOURCE = get_key_presses.c
+$(BIN): $(SRC) minijson.h
+	$(CC) $(CFLAGS) -o $@ $(SRC) $(LIBS)
 
-# Install paths
-BINDIR = $(PREFIX)/bin
-SHAREDIR = $(PREFIX)/share/mechsim
+# Synthetic keystroke injector used for the latency benchmark.
+keyprobe: keyprobe.c
+	$(CC) $(CFLAGS) -o $@ keyprobe.c
 
-all: $(MECHSIM_TARGET) $(SOUND_TARGET) $(KEYBOARD_TARGET)
+bench: $(BIN) keyprobe
+	python3 bench.py
 
-$(MECHSIM_TARGET): $(MECHSIM_SOURCE)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $<
-
-$(SOUND_TARGET): $(SOUND_SOURCE)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $< $(LDFLAGS_SOUND)
-
-$(KEYBOARD_TARGET): $(KEYBOARD_SOURCE)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $< $(LDFLAGS_KEYBOARD)
-
-clean:
-	rm -f $(MECHSIM_TARGET) $(SOUND_TARGET) $(KEYBOARD_TARGET)
-
-test: all
-	@echo "Testing sound packs:"
-	./$(MECHSIM_TARGET) --list
-	@echo ""
-	@echo "To run MechSim:"
-	@echo "  sudo ./$(MECHSIM_TARGET)                    # Default sound"
-	@echo "  sudo ./$(MECHSIM_TARGET) -s cherrymx-blue-abs  # Specific sound"
-	@echo "  sudo ./$(MECHSIM_TARGET) --help             # Show help"
-
-install:
-	@echo "Installing MechSim to $(DESTDIR)$(BINDIR) and $(DESTDIR)$(SHAREDIR)..."
-	install -Dm755 $(MECHSIM_TARGET) $(DESTDIR)$(BINDIR)/$(MECHSIM_TARGET)
-	install -Dm755 $(SOUND_TARGET) $(DESTDIR)$(BINDIR)/$(SOUND_TARGET)
-	install -Dm755 $(KEYBOARD_TARGET) $(DESTDIR)$(BINDIR)/$(KEYBOARD_TARGET)
-	install -d $(DESTDIR)$(SHAREDIR)
-	cp -r audio $(DESTDIR)$(SHAREDIR)/
-	@echo "Installation complete."
+install: $(BIN)
+	install -Dm755 $(BIN) $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	install -d $(DESTDIR)$(PREFIX)/share/mechsim
+	cp -r audio $(DESTDIR)$(PREFIX)/share/mechsim/
 
 uninstall:
-	@echo "Uninstalling MechSim from $(DESTDIR)$(BINDIR) and $(DESTDIR)$(SHAREDIR)..."
-	rm -f $(DESTDIR)$(BINDIR)/$(MECHSIM_TARGET)
-	rm -f $(DESTDIR)$(BINDIR)/$(SOUND_TARGET)
-	rm -f $(DESTDIR)$(BINDIR)/$(KEYBOARD_TARGET)
-	rm -rf $(DESTDIR)$(SHAREDIR)
-	@echo "Uninstallation complete."
+	rm -f $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	rm -rf $(DESTDIR)$(PREFIX)/share/mechsim
 
-.PHONY: all clean test install uninstall
+clean:
+	rm -f $(BIN) keyprobe
+
+.PHONY: all install uninstall clean bench
