@@ -1,5 +1,6 @@
 # build output
 /mechsim
+/mechsim-toggle
 /keyprobe
 *.o
 *.a
