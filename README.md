@@ -57,9 +57,6 @@ Then make sure you can read `/dev/input`, which is all the permission this needs
 sudo usermod -a -G input "$USER"   # log out and back in afterwards
 ```
 
-No `sudo` is required to *run* it. Only `libinput`, which this branch no longer
-uses, needed that.
-
 ## Full Usage
 
     Usage: mechsim [OPTIONS]
