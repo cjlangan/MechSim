@@ -484,23 +484,29 @@ static sample_t load_file(const char *path)
 		return s;
 	}
 
+	/* Read as float: libsndfile does not scale float files when reading them
+	 * as shorts, which turns a float WAV into silence. */
 	size_t in_ch = (size_t)info.channels;
-	int16_t *raw = xmalloc((size_t)info.frames * in_ch * sizeof(int16_t));
-	sf_count_t got = sf_readf_short(sf, raw, info.frames);
+	float *in = xmalloc((size_t)info.frames * in_ch * sizeof(float));
+	sf_count_t got = sf_readf_float(sf, in, info.frames);
 	sf_close(sf);
 	if (got <= 0) {
-		free(raw);
+		free(in);
 		return s;
 	}
 
-	/* Keep only the first two channels. */
-	if (in_ch > 2) {
-		for (size_t i = 0; i < (size_t)got; i++) {
-			raw[i * 2 + 0] = raw[i * in_ch + 0];
-			raw[i * 2 + 1] = raw[i * in_ch + 1];
+	/* Convert to 16 bits, keeping only the first two channels. */
+	s.ch = in_ch > 2 ? 2 : (int)in_ch;
+	int16_t *raw = xmalloc((size_t)got * (size_t)s.ch * sizeof(int16_t));
+	for (size_t i = 0; i < (size_t)got; i++) {
+		for (size_t c = 0; c < (size_t)s.ch; c++) {
+			float v = in[i * in_ch + c] * 32768.0f;
+			if (v > 32767.0f) v = 32767.0f;
+			else if (v < -32768.0f) v = -32768.0f;
+			raw[i * (size_t)s.ch + c] = (int16_t)lrintf(v);
 		}
 	}
-	s.ch = in_ch > 2 ? 2 : (int)in_ch;
+	free(in);
 
 	if (info.samplerate == OUT_RATE) {
 		s.data = raw;
@@ -545,8 +551,9 @@ static int is_mouse(int code)
 	       (code >= CODE_WHEEL_UP && code <= CODE_WHEEL_RIGHT);
 }
 
-/* Pack keys are numeric evdev codes (MechSim) or names (MechVibes V2), either
- * one optionally suffixed "-up" or "_up" for the release sound. */
+/* Pack keys are numeric evdev codes (MechVibes V1) or names (V2 packs use the
+ * web KeyboardEvent.code names), either one optionally suffixed "-up" or "_up"
+ * for the release sound. */
 static int key_name_to_code(const char *k, int *is_release)
 {
 	static const struct { const char *name; int code; } names[] = {
@@ -559,6 +566,60 @@ static int key_name_to_code(const char *k, int *is_release)
 		{ "MouseWheelDown",  CODE_WHEEL_DOWN },
 		{ "MouseWheelLeft",  CODE_WHEEL_LEFT },
 		{ "MouseWheelRight", CODE_WHEEL_RIGHT },
+		{ "KeyA", KEY_A }, { "KeyB", KEY_B }, { "KeyC", KEY_C },
+		{ "KeyD", KEY_D }, { "KeyE", KEY_E }, { "KeyF", KEY_F },
+		{ "KeyG", KEY_G }, { "KeyH", KEY_H }, { "KeyI", KEY_I },
+		{ "KeyJ", KEY_J }, { "KeyK", KEY_K }, { "KeyL", KEY_L },
+		{ "KeyM", KEY_M }, { "KeyN", KEY_N }, { "KeyO", KEY_O },
+		{ "KeyP", KEY_P }, { "KeyQ", KEY_Q }, { "KeyR", KEY_R },
+		{ "KeyS", KEY_S }, { "KeyT", KEY_T }, { "KeyU", KEY_U },
+		{ "KeyV", KEY_V }, { "KeyW", KEY_W }, { "KeyX", KEY_X },
+		{ "KeyY", KEY_Y }, { "KeyZ", KEY_Z }, { "Digit1", KEY_1 },
+		{ "Digit2", KEY_2 }, { "Digit3", KEY_3 }, { "Digit4", KEY_4 },
+		{ "Digit5", KEY_5 }, { "Digit6", KEY_6 }, { "Digit7", KEY_7 },
+		{ "Digit8", KEY_8 }, { "Digit9", KEY_9 }, { "Digit0", KEY_0 },
+		{ "F1", KEY_F1 }, { "F2", KEY_F2 }, { "F3", KEY_F3 },
+		{ "F4", KEY_F4 }, { "F5", KEY_F5 }, { "F6", KEY_F6 },
+		{ "F7", KEY_F7 }, { "F8", KEY_F8 }, { "F9", KEY_F9 },
+		{ "F10", KEY_F10 }, { "F11", KEY_F11 }, { "F12", KEY_F12 },
+		{ "F13", KEY_F13 }, { "F14", KEY_F14 }, { "F15", KEY_F15 },
+		{ "F16", KEY_F16 }, { "F17", KEY_F17 }, { "F18", KEY_F18 },
+		{ "F19", KEY_F19 }, { "F20", KEY_F20 }, { "F21", KEY_F21 },
+		{ "F22", KEY_F22 }, { "F23", KEY_F23 }, { "F24", KEY_F24 },
+		{ "Escape", KEY_ESC }, { "Backquote", KEY_GRAVE },
+		{ "Minus", KEY_MINUS }, { "Equal", KEY_EQUAL },
+		{ "Backspace", KEY_BACKSPACE }, { "Tab", KEY_TAB },
+		{ "BracketLeft", KEY_LEFTBRACE }, { "BracketRight", KEY_RIGHTBRACE },
+		{ "Backslash", KEY_BACKSLASH }, { "CapsLock", KEY_CAPSLOCK },
+		{ "Semicolon", KEY_SEMICOLON }, { "Quote", KEY_APOSTROPHE },
+		{ "Enter", KEY_ENTER }, { "ShiftLeft", KEY_LEFTSHIFT },
+		{ "Comma", KEY_COMMA }, { "Period", KEY_DOT }, { "Slash", KEY_SLASH },
+		{ "ShiftRight", KEY_RIGHTSHIFT }, { "ControlLeft", KEY_LEFTCTRL },
+		{ "MetaLeft", KEY_LEFTMETA }, { "AltLeft", KEY_LEFTALT },
+		{ "Space", KEY_SPACE }, { "AltRight", KEY_RIGHTALT },
+		{ "MetaRight", KEY_RIGHTMETA }, { "ContextMenu", KEY_COMPOSE },
+		{ "ControlRight", KEY_RIGHTCTRL }, { "Fn", KEY_FN },
+		{ "IntlBackslash", KEY_102ND }, { "IntlRo", KEY_RO },
+		{ "IntlYen", KEY_YEN }, { "PrintScreen", KEY_SYSRQ },
+		{ "ScrollLock", KEY_SCROLLLOCK }, { "Pause", KEY_PAUSE },
+		{ "Insert", KEY_INSERT }, { "Home", KEY_HOME },
+		{ "PageUp", KEY_PAGEUP }, { "Delete", KEY_DELETE },
+		{ "End", KEY_END }, { "PageDown", KEY_PAGEDOWN },
+		{ "ArrowUp", KEY_UP }, { "ArrowLeft", KEY_LEFT },
+		{ "ArrowDown", KEY_DOWN }, { "ArrowRight", KEY_RIGHT },
+		{ "NumLock", KEY_NUMLOCK }, { "Numpad0", KEY_KP0 },
+		{ "Numpad1", KEY_KP1 }, { "Numpad2", KEY_KP2 },
+		{ "Numpad3", KEY_KP3 }, { "Numpad4", KEY_KP4 },
+		{ "Numpad5", KEY_KP5 }, { "Numpad6", KEY_KP6 },
+		{ "Numpad7", KEY_KP7 }, { "Numpad8", KEY_KP8 },
+		{ "Numpad9", KEY_KP9 }, { "NumpadDivide", KEY_KPSLASH },
+		{ "NumpadMultiply", KEY_KPASTERISK },
+		{ "NumpadSubtract", KEY_KPMINUS }, { "NumpadAdd", KEY_KPPLUS },
+		{ "NumpadEnter", KEY_KPENTER }, { "NumpadDecimal", KEY_KPDOT },
+		{ "NumpadEqual", KEY_KPEQUAL }, { "NumpadComma", KEY_KPCOMMA },
+		{ "AudioVolumeMute", KEY_MUTE },
+		{ "AudioVolumeDown", KEY_VOLUMEDOWN },
+		{ "AudioVolumeUp", KEY_VOLUMEUP },
 	};
 	char base[64];
 	snprintf(base, sizeof(base), "%s", k);
@@ -639,6 +700,8 @@ static void load_v2(const char *dir, mj_val *root, int mouse_only)
 	mj_val *defs = mj_get(root, "definitions");
 	if (!defs)
 		defs = mj_get(root, "defs");
+	const char *unknown = NULL;
+	size_t n_unknown = 0;
 
 	for (size_t i = 0; defs && i < mj_len(defs); i++) {
 		const char *name = mj_key_at(defs, i);
@@ -651,6 +714,10 @@ static void load_v2(const char *dir, mj_val *root, int mouse_only)
 		const char *own = mj_str(mj_get(entry, "audio_file"));
 		const char *file = own ? own : audio;
 		mj_val *timing = mj_get(entry, "timing");
+		if (code < 0) {
+			unknown = name;
+			n_unknown++;
+		}
 		if (code < 0 || !file || !timing || (mouse_only && !is_mouse(code)))
 			continue;
 
@@ -664,6 +731,9 @@ static void load_v2(const char *dir, mj_val *root, int mouse_only)
 			map_sound(code, is_rel || seg == 1, slice_ms(base, a, b - a));
 		}
 	}
+	if (n_unknown)
+		fprintf(stderr, "mechsim: note: %zu unrecognised key name(s) in pack, such as \"%s\"\n",
+			n_unknown, unknown);
 }
 
 /* MechVibes V1: "multi" maps each key to a file, "single" to [start, length]
